@@ -1,0 +1,338 @@
+"""
+Integración de Goodreads (JSON) y Google Books (CSV) a artefactos estándar.
+Produce standard/dim_book.parquet, standard/book_source_detail.parquet y docs/quality_metrics.json
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional, Tuple, Mapping, Any, cast
+
+import numpy as np
+import pandas as pd
+
+from utils_isbn import is_valid_isbn13
+from utils_quality import (
+    compute_quality_metrics,
+    listify,
+    normalize_language,
+    normalize_whitespace,
+    parse_date_to_iso,
+    uniq_preserve,
+    validate_currency,
+    validate_language,  # añadido para validar idiomas correctamente
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+LANDING = ROOT / "landing"
+STANDARD = ROOT / "standard"
+DOCS = ROOT / "docs"
+
+
+def _canonical_key(title: str, author: str, publisher: Optional[str], year: Optional[int]) -> str:
+    # DEDUPLICACION: genera clave canónica estable para fallback cuando isbn13 no existe
+    # KEYWORD: GENERAR_BOOK_KEY, DEDUPLICACION
+    def _norm(x: Optional[object]) -> str:
+        if x is None or (isinstance(x, float) and pd.isna(x)) or (hasattr(pd, "isna") and pd.isna(x)):  # type: ignore[arg-type]
+            return ""
+        s = str(x)
+        return s.strip().lower()
+    base = "|".join([
+        _norm(title),
+        _norm(author),
+        _norm(publisher),
+        _norm(year),
+    ])
+    return hashlib.sha1(base.encode("utf-8")).hexdigest()
+
+
+def _load_sources() -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Carga archivos de landing asegurando ISBN como string para evitar coerción a int.
+    KEYWORD: CARGA_FUENTES
+    """
+    gr_path = LANDING / "goodreads_books.json"
+    gb_path = LANDING / "googlebooks_books.csv"
+
+    with open(gr_path, "r", encoding="utf-8") as f:
+        gr_json = json.load(f)
+    gr = pd.DataFrame(gr_json.get("records", []))
+    gr["source_name"] = "goodreads"
+    gr["source_file"] = str(gr_path)
+
+    # Forzar lectura de ISBN como texto.
+    gb = pd.read_csv(gb_path, dtype={"isbn13": "string", "isbn10": "string"})
+    gb["source_name"] = "google_books"
+    gb["source_file"] = str(gb_path)
+    return gr, gb
+
+
+def _normalize_frames(gr: pd.DataFrame, gb: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    # Goodreads
+    gr = gr.copy()
+    gr.rename(columns={
+        "title": "titulo",
+        "author": "autor_principal",
+        "isbn13": "isbn13",
+        "isbn10": "isbn10",
+    }, inplace=True)
+    # Asegurar isbn como string consistente
+    for c in ("isbn13", "isbn10"):
+        if c in gr.columns:
+            gr[c] = gr[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
+    gr["idioma"] = None
+    gr["categoria"] = None
+    gr["fecha_publicacion"] = None
+    gr["precio"] = None
+    gr["moneda"] = None
+
+    # Google Books
+    gb = gb.copy()
+    gb.rename(columns={
+        "title": "titulo",
+        "authors": "autores",
+        "publisher": "editorial",
+        "pub_date": "fecha_publicacion",
+        "language": "idioma",
+        "categories": "categoria",
+        "price_amount": "precio",
+        "price_currency": "moneda",
+    }, inplace=True)
+    for c in ("isbn13", "isbn10"):
+        if c in gb.columns:
+            gb[c] = gb[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
+    # autores/categoria como listas normalizadas serializadas con ';'
+    if "autores" in gb.columns:
+        gb["autores"] = gb["autores"].apply(lambda x: ";".join(uniq_preserve(listify(x))) if pd.notna(x) else None)
+    if "categoria" in gb.columns:
+        gb["categoria"] = gb["categoria"].apply(lambda x: ";".join(uniq_preserve(listify(x))) if pd.notna(x) else None)
+    # idioma normalizado
+    if "idioma" in gb.columns:
+        gb["idioma"] = gb["idioma"].apply(lambda x: normalize_language(x) if pd.notna(x) else None)
+
+    return gr, gb
+
+
+def _merge_sources(gr: pd.DataFrame, gb: pd.DataFrame) -> pd.DataFrame:
+    # MERGE / NORMALIZACION
+    # KEYWORD: MERGE_ISBN, SELECCION_CAMPOS
+    left = gr.copy()
+    right = gb.copy()
+
+    merged = pd.merge(left, right, on="isbn13", how="outer", suffixes=("_gr", "_gb"))
+
+    def pick(a, b):
+        # UTIL: selección simple primer valor no-nulo
+        return a if pd.notna(a) and a != "" else (b if pd.notna(b) and b != "" else None)
+
+    out = pd.DataFrame()
+    out["isbn13"] = merged["isbn13"].where(merged["isbn13"].notna(), None)
+    out["isbn10"] = merged.apply(lambda r: pick(r.get("isbn10_gr"), r.get("isbn10")), axis=1)
+    out["titulo"] = merged.apply(lambda r: pick(r.get("titulo_gr"), r.get("titulo")), axis=1)
+    # origen de título
+    out["titulo_source"] = merged.apply(lambda r: ("goodreads" if pd.notna(r.get("titulo_gr")) and r.get("titulo_gr") not in ("", None) else ("google_books" if pd.notna(r.get("titulo")) and r.get("titulo") not in ("", None) else None)), axis=1)
+    out["autor_principal"] = merged.apply(lambda r: pick(r.get("autor_principal"), (r.get("autores") or "").split(";")[0] if pd.notna(r.get("autores")) and r.get("autores") else None), axis=1)
+    out["autor_principal_source"] = merged.apply(lambda r: ("goodreads" if pd.notna(r.get("autor_principal")) and r.get("autor_principal") not in ("", None) else ("google_books" if pd.notna(r.get("autores")) and r.get("autores") not in ("", None) else None)), axis=1)
+    out["autores"] = merged.get("autores") if "autores" in merged.columns else None
+    out["editorial"] = merged.get("editorial") if "editorial" in merged.columns else None
+    # origen editorial: se busca primero editorial_gr, luego editorial (google)
+    out["editorial_source"] = merged.apply(lambda r: ("goodreads" if pd.notna(r.get("editorial_gr")) and r.get("editorial_gr") not in ("", None) else ("google_books" if pd.notna(r.get("editorial")) and r.get("editorial") not in ("", None) else None)), axis=1)
+
+    def parse_fecha(x):
+        val, parcial = parse_date_to_iso(x)
+        return val
+    out["fecha_publicacion"] = merged.apply(lambda r: pick(r.get("fecha_publicacion_gr"), parse_fecha(r.get("fecha_publicacion"))), axis=1)
+    out["fecha_publicacion_source"] = merged.apply(lambda r: ("goodreads" if pd.notna(r.get("fecha_publicacion_gr")) and r.get("fecha_publicacion_gr") not in ("", None) else ("google_books" if pd.notna(r.get("fecha_publicacion")) and r.get("fecha_publicacion") not in ("", None) else None)), axis=1)
+
+    out["idioma"] = merged["idioma"] if "idioma" in merged.columns else None
+    out["precio"] = merged["precio"] if "precio" in merged.columns else None
+    out["moneda"] = merged["moneda"] if "moneda" in merged.columns else None
+    out["precio_source"] = merged.apply(lambda r: ("goodreads" if pd.notna(r.get("precio_gr")) and r.get("precio_gr") not in ("", None) else ("google_books" if pd.notna(r.get("precio") ) and r.get("precio") not in ("", None) else None)), axis=1)
+
+    out["categoria"] = merged.apply(lambda r: pick(r.get("categoria_gr"), r.get("categoria")), axis=1) if "categoria_gr" in merged.columns or "categoria" in merged.columns else None
+
+    out["titulo_normalizado"] = out["titulo"].apply(lambda s: normalize_whitespace(str(s).lower()) if pd.notna(s) else None)
+    out["anio_publicacion"] = out["fecha_publicacion"].apply(lambda s: int(str(s)[:4]) if pd.notna(s) else None)
+
+    def mk_book_id(r):
+        # GENERAR_BOOK_ID: preferir isbn13 válido; si no existe, usar clave canónica SHA1
+        # KEYWORD: GENERAR_BOOK_ID, BOOK_ID
+        if r.get("isbn13") and is_valid_isbn13(str(r.get("isbn13"))):
+            return str(r.get("isbn13"))
+        return _canonical_key(r.get("titulo") or "", r.get("autor_principal") or "", r.get("editorial"), r.get("anio_publicacion"))
+
+    out["book_id"] = out.apply(mk_book_id, axis=1)
+
+    out["isbn13_valido"] = out["isbn13"].apply(lambda x: bool(is_valid_isbn13(str(x))) if pd.notna(x) else False)
+    out["idioma_valido"] = out["idioma"].apply(lambda x: validate_language(x) if pd.notna(x) else False)
+    out["moneda_valida"] = out["moneda"].apply(lambda x: validate_currency(x))
+    out["fecha_publicacion_valida"] = out["fecha_publicacion"].apply(lambda x: isinstance(x, str) and len(x) == 10)
+
+    def fuente(r):
+        prefer_gb = any(pd.notna(r.get(c)) for c in ("editorial", "fecha_publicacion", "autores"))
+        return "google_books" if prefer_gb else "goodreads"
+
+    out["fuente_ganadora"] = out.apply(fuente, axis=1)
+    out["ts_ultima_actualizacion"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    cols = [
+        "book_id","titulo","titulo_normalizado","autor_principal","autores","editorial","anio_publicacion","fecha_publicacion","idioma","isbn10","isbn13","categoria","precio","moneda","fuente_ganadora","ts_ultima_actualizacion",
+        "isbn13_valido","idioma_valido","moneda_valida","fecha_publicacion_valida",
+    ]
+    # Insertar columnas de provenance al esquema (al final de lista para compatibilidad)
+    cols = cols + ["titulo_source","autor_principal_source","editorial_source","fecha_publicacion_source","precio_source"]
+    out = out[cols]
+    # Forzar tipos string para ISBN antes de retorno
+    for c in ("isbn10","isbn13"):
+        if c in out.columns:
+            out[c] = out[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
+    return out
+
+
+def _build_source_detail(gr: pd.DataFrame, gb: pd.DataFrame, dim: pd.DataFrame) -> pd.DataFrame:
+    """Construye tabla detalle incluyendo flags de validación por registro."""
+    gr_tmp = gr.copy()
+    gb_tmp = gb.copy()
+
+    gr_tmp["book_id_candidato"] = gr_tmp.apply(lambda r: str(r.get("isbn13")) if pd.notna(r.get("isbn13")) and is_valid_isbn13(str(r.get("isbn13"))) else _canonical_key(r.get("titulo") or r.get("title"), r.get("autor_principal") or r.get("author"), None, None), axis=1)
+    gb_tmp["book_id_candidato"] = gb_tmp.apply(lambda r: str(r.get("isbn13")) if pd.notna(r.get("isbn13")) and is_valid_isbn13(str(r.get("isbn13"))) else _canonical_key(r.get("titulo") or r.get("title"), (str(r.get("autores")).split(";")[0] if pd.notna(r.get("autores")) else None), r.get("editorial") or r.get("publisher"), None), axis=1)
+
+    gr_tmp["row_number"] = np.arange(1, len(gr_tmp) + 1)
+    gb_tmp["row_number"] = np.arange(1, len(gb_tmp) + 1)
+
+    gr_tmp["source_name"] = "goodreads"
+    gb_tmp["source_name"] = "google_books"
+
+    gr_tmp["source_file"] = str(LANDING / "goodreads_books.json")
+    gb_tmp["source_file"] = str(LANDING / "googlebooks_books.csv")
+
+    gr_sel = gr_tmp[[
+        "source_name","source_file","row_number","book_id_candidato","titulo","autor_principal","isbn10","isbn13"
+    ]].rename(columns={"titulo": "raw_title", "autor_principal": "raw_author"})
+
+    gb_sel = gb_tmp[[
+        "source_name","source_file","row_number","book_id_candidato","titulo","autores","editorial","fecha_publicacion","idioma","categoria","isbn10","isbn13","precio","moneda"
+    ]].rename(columns={
+        "titulo": "raw_title",
+        "autores": "raw_authors",
+        "editorial": "raw_publisher",
+        "fecha_publicacion": "raw_pub_date",
+        "idioma": "raw_language",
+        "categoria": "raw_categories",
+        "precio": "raw_price_amount",
+        "moneda": "raw_price_currency",
+    })
+
+    detail = pd.concat([gr_sel, gb_sel], ignore_index=True)
+    detail["timestamp_ingesta"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # Añadir flags de validación a nivel registro
+    detail["isbn13_valido"] = detail["isbn13"].apply(lambda x: bool(is_valid_isbn13(str(x))) if pd.notna(x) else False)
+    detail["idioma_valido"] = detail.get("raw_language", pd.Series([None]*len(detail))).apply(lambda x: validate_language(x) if pd.notna(x) else False)
+    detail["moneda_valida"] = detail.get("raw_price_currency", pd.Series([None]*len(detail))).apply(lambda x: validate_currency(x))
+    detail["fecha_publicacion_valida"] = detail.get("raw_pub_date", pd.Series([None]*len(detail))).apply(lambda x: isinstance(x, str) and len(str(x).strip()) in (4,7,10))
+
+    for c in ("isbn10", "isbn13"):
+        if c in detail.columns:
+            detail[c] = detail[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
+    # Añadir flags de provenance: si este registro aportó el valor final en dim
+    # Construir mapeo book_id -> registro dim (valores finales)
+    try:
+        dim_map = dim.set_index("book_id").to_dict(orient="index") if (isinstance(dim, pd.DataFrame) and "book_id" in dim.columns) else {}
+    except Exception:
+        dim_map = {}
+
+    def _matches_final(row, field_raw, field_dim):
+        bid = row.get("book_id_candidato")
+        if not bid or bid not in dim_map:
+            return False
+        final_val = dim_map[bid].get(field_dim)
+        raw_val = row.get(field_raw)
+        # normalizar para comparación simple
+        if pd.isna(final_val) and (raw_val is None or (isinstance(raw_val, float) and pd.isna(raw_val))):
+            return False
+        try:
+            return (str(final_val).strip() != "" and str(raw_val).strip() == str(final_val).strip())
+        except Exception:
+            return False
+
+    detail["contribuye_titulo"] = detail.apply(lambda r: _matches_final(r, "raw_title", "titulo"), axis=1)
+    detail["contribuye_autor_principal"] = detail.apply(lambda r: _matches_final(r, "raw_author" if "raw_author" in detail.columns else "raw_authors", "autor_principal"), axis=1)
+    detail["contribuye_editorial"] = detail.apply(lambda r: _matches_final(r, "raw_publisher", "editorial"), axis=1)
+    detail["contribuye_fecha_publicacion"] = detail.apply(lambda r: _matches_final(r, "raw_pub_date", "fecha_publicacion"), axis=1)
+    detail["contribuye_precio"] = detail.apply(lambda r: _matches_final(r, "raw_price_amount", "precio"), axis=1)
+
+    return detail
+
+
+def integrate() -> None:
+    gr_raw, gb_raw = _load_sources()
+    gr_n, gb_n = _normalize_frames(gr_raw, gb_raw)
+    dim = _merge_sources(gr_n, gb_n)
+
+    dim = dim.sort_values(["isbn13_valido", "anio_publicacion"], ascending=[False, False])
+    # DEDUPLICACION: eliminar duplicados por book_id manteniendo el registro preferido
+    # KEYWORD: DEDUPLICACION_DROP
+    dim = dim.drop_duplicates(subset=["book_id"], keep="first")
+
+    detail = _build_source_detail(gr_n, gb_n, dim)
+
+    metrics = compute_quality_metrics(cast(list[Mapping[str, object]], dim.to_dict(orient="records")))
+
+    STANDARD.mkdir(parents=True, exist_ok=True)
+    DOCS.mkdir(parents=True, exist_ok=True)
+
+    dim_path = STANDARD / "dim_book.parquet"
+    det_path = STANDARD / "book_source_detail.parquet"
+    q_path = DOCS / "quality_metrics.json"
+
+    # Escritura Parquet (ISBN forzados como string serializable)
+    # Asegurar dtype string explícito en columnas problemáticas
+    def _coerce_isbn_cols(df: pd.DataFrame) -> None:
+        """Normaliza columnas isbn10/isbn13 a str o None y valida que no queden tipos mixtos (int/float).
+        Lanza RuntimeError con detalle si encuentra valores no convertibles.
+        """
+        for c in ("isbn10", "isbn13"):
+            if c in df.columns:
+                # Reemplazar cadenas vacías por None para un tratamiento consistente
+                df[c] = df[c].replace({"": None})
+                # Convertir NaN/None a None y forzar str() en el resto
+                def _to_str_or_none(v: object) -> Optional[str]:
+                    try:
+                        if v is None or (isinstance(v, float) and pd.isna(v)):
+                            return None
+                        s = str(v).strip()
+                        return s if s != "" else None
+                    except Exception:
+                        return None
+
+                df[c] = df[c].apply(_to_str_or_none)
+                # Validar que no quedan valores no-string; si hay, tomar muestra y fallar con mensaje claro
+                bad_vals = [v for v in df[c].dropna().unique() if not isinstance(v, str)]
+                if bad_vals:
+                    raise RuntimeError(f"Columna {c} contiene valores no-string despu\u00E9s de coercion: {bad_vals[:5]} (muestra)")
+                # Establecer dtype pandas 'string' para compatibilidad con pyarrow
+                try:
+                    df[c] = df[c].astype("string")
+                except Exception:
+                    # último recurso: convertir todo a Python str con None
+                    df[c] = df[c].apply(lambda v: None if v is None else str(v))
+
+    _coerce_isbn_cols(dim)
+    _coerce_isbn_cols(detail)
+    dim.to_parquet(dim_path, index=False)
+    detail.to_parquet(det_path, index=False)
+
+    with open(q_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, ensure_ascii=False, indent=2)
+
+    print(f"Escrito {dim_path} y {det_path}; métricas en {q_path}")
+
+
+def main() -> None:
+    integrate()
+
+
+if __name__ == "__main__":
+    main()

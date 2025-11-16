@@ -1,0 +1,24 @@
+{
+  "filas_totales": 30,
+  "nulos_por_campo": {
+    "book_id": 0,
+    "titulo": 15,
+    "autor_principal": 0,
+    "isbn13": 15,
+    "fecha_publicacion": 30,
+    "idioma": 30,
+    "precio": 30,
+    "moneda": 30
+  },
+  "porcentaje_fechas_validas": 0.0,
+  "porcentaje_idiomas_validos": 0.0,
+  "porcentaje_monedas_validas": 0.0,
+  "porcentaje_isbn13_validos": 50.0,
+  "completitud_promedio": 37.5,
+  "duplicados_isbn13": 0,
+  "duplicados_book_id": 0,
+  "filas_por_fuente": {
+    "google_books": 15,
+    "goodreads": 15
+  }
+}
