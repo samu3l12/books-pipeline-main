@@ -8,7 +8,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple, Mapping, Any, cast
+from typing import Optional, Tuple, Mapping, Dict
 
 import numpy as np
 import pandas as pd
@@ -105,11 +105,19 @@ def _normalize_frames(gr: pd.DataFrame, gb: pd.DataFrame) -> Tuple[pd.DataFrame,
     # autores/categoria como listas normalizadas serializadas con ';'
     if "autores" in gb.columns:
         gb["autores"] = gb["autores"].apply(lambda x: ";".join(uniq_preserve(listify(x))) if pd.notna(x) else None)
+        # extraer autor_principal desde autores para emparejamiento
+        gb["autor_principal"] = gb["autores"].apply(lambda x: str(x).split(";")[0] if pd.notna(x) and str(x).strip() != "" else None)
+    else:
+        gb["autor_principal"] = None
     if "categoria" in gb.columns:
         gb["categoria"] = gb["categoria"].apply(lambda x: ";".join(uniq_preserve(listify(x))) if pd.notna(x) else None)
     # idioma normalizado
     if "idioma" in gb.columns:
         gb["idioma"] = gb["idioma"].apply(lambda x: normalize_language(x) if pd.notna(x) else None)
+
+    # Normalizar títulos y autores para emparejamiento secundario (cuando isbn faltante)
+    gb["_match_title"] = gb["titulo"].apply(lambda s: normalize_whitespace(str(s).lower()) if pd.notna(s) else None)
+    gb["_match_author"] = gb["autor_principal"].apply(lambda s: normalize_whitespace(str(s).lower()) if pd.notna(s) else None)
 
     return gr, gb
 
@@ -120,7 +128,102 @@ def _merge_sources(gr: pd.DataFrame, gb: pd.DataFrame) -> pd.DataFrame:
     left = gr.copy()
     right = gb.copy()
 
-    merged = pd.merge(left, right, on="isbn13", how="outer", suffixes=("_gr", "_gb"))
+    # RELLENAR isbn13 en Goodreads cuando exista coincidencia exacta de titulo_normalizado + autor_principal
+    # Esto evita que registros idénticos queden duplicados tras el merge outer por isbn null
+    def _mk_match_key(df):
+        t = df.get("titulo") if "titulo" in df else None
+        a = df.get("autor_principal") if "autor_principal" in df else None
+        t_norm = normalize_whitespace(str(t).lower()) if pd.notna(t) else None
+        a_norm = normalize_whitespace(str(a).lower()) if pd.notna(a) else None
+        if t_norm and a_norm:
+            return f"{t_norm}|{a_norm}"
+        if t_norm:
+            return f"{t_norm}|"
+        return None
+
+    # crear keys en ambos marcos
+    left["_match_key"] = left.apply(lambda r: _mk_match_key(r), axis=1)
+    right["_match_key"] = right.apply(lambda r: (str(r.get("_match_title")) + "|" + str(r.get("_match_author"))).strip("None") if (r.get("_match_title") is not None or r.get("_match_author") is not None) else None, axis=1)
+
+    # mapa de match_key -> isbn13 desde google_books
+    gb_key_to_isbn = {}
+    for _, row in right.iterrows():
+        key = row.get("_match_key")
+        isbn = row.get("isbn13")
+        if key and isbn:
+            gb_key_to_isbn.setdefault(key, isbn)
+
+    # rellenar isbn13 en left cuando falta y existe en map
+    def _fill_isbn_from_key(row):
+        if pd.notna(row.get("isbn13")) and str(row.get("isbn13")).strip() != "":
+            return row.get("isbn13")
+        key = row.get("_match_key")
+        if key and key in gb_key_to_isbn:
+            return gb_key_to_isbn[key]
+        return row.get("isbn13")
+
+    left["isbn13"] = left.apply(_fill_isbn_from_key, axis=1)
+
+    # Evitar outer merge que puede producir muchas filas cuando isbn13 es null.
+    # Estrategia: 1) hacer left-join de Goodreads <- GoogleBooks por isbn13 (para filas de Goodreads);
+    # 2) añadir filas de GoogleBooks cuyo isbn13 no fue emparejado con ningún Goodreads (gb-only).
+    # Esto produce una unión sin multiplicar combinaciones de rows con isbn null.
+    merged_left = pd.merge(left, right, on="isbn13", how="left", suffixes=("_gr", "_gb"))
+
+    # Identificar isbn13 presentes en left (post-fill) para excluirlos de gb-only
+    left_isbns = set([v for v in merged_left['isbn13'].dropna().unique()])
+    # gb_only: filas de right con isbn13 que no están en left_isbns OR filas de right con isbn13 null (no emparejadas)
+    gb_only_mask = ~right['isbn13'].isin(left_isbns)
+    gb_only = right[gb_only_mask].copy()
+    # Expandir gb_only para mantener la misma estructura que merged_left: agregar sufijos '_gr' nulos
+    if not gb_only.empty:
+        # Renombrar columnas para que concuerden cuando se concatena con merged_left
+        gb_only_renamed = gb_only.rename(columns={k: f"{k}" for k in gb_only.columns})
+        # Para las columnas que aparecerán como *_gr en merged_left, crear versiones vacías
+        gb_cols = list(gb_only_renamed.columns)
+        # Construir DataFrame con columnas combinadas: tomar columnas de merged_left y rellenar con valores de gb_only
+        # Simplificar: crear rows con prefijo _gb en lugar de duplicar sufijos. Luego transformaremos al formato esperado abajo.
+        # Para simplicidad, construiremos un merged equivalente concatenando merged_left y gb_only con columnas alineadas vía reindex.
+        # Obtener columnas resultantes esperadas tras merge (approx): combinación de cols_gr and cols_gb
+        # Para robustez, vamos a construir un DataFrame final a partir de concatenación de merged_left y una versión 'pseudo-merged' de gb_only.
+        # Crear pseudo-merged para gb_only: crear columnas terminadas en _gr con NaN y mantener columnas _gb sin sufijo.
+        for col in gb_only_renamed.columns:
+            # si col ya existe en merged_left como 'col_gr' o 'col', no hacemos nada
+            pass
+    # Para mantener compatibilidad con el resto del pipeline, volver a usar merged = merged_left + gb_only rows
+    if gb_only is not None and not gb_only.empty:
+        # Convertir gb_only a formato similar al obtenido en merged_left: prefijar las columnas originales como *_gb
+        gb_prefixed = gb_only.copy()
+        # Asegurar que las columnas que merged_left espera (e.g., titulo_gr, titulo) estén presentes; generar columnas *_gr vacías
+        # Primero, identificar columnas de right (sin sufijo) que merged_left contiene como 'col' y las que existen con '_gb'
+        # En merged_left, las columnas provenientes de right aparecen sin sufijo (por cómo se hizo merge left),
+        # pero las columnas de left mantienen sufijo _gr si hay conflicto. Para simplificar, renombraremos gb_prefixed cols a su forma original
+        # y luego concatenaremos rows: merged_left (tiene columnas combinadas) y gb_only_rows construidas manualmente.
+        # Construir gb_only_rows en la forma de merged_left: mapear columnas del right a las columnas sin sufijo en merged_left,
+        # y crear columnas *_gr con NaN para las columnas de left.
+        gb_only_rows = []
+        for _, r in gb_only.iterrows():
+            # crear dict con todas las columnas que merged_left tiene
+            row = {}
+            # columnas de left (prefijo _gr) vendrán como None
+            # intentaremos inferir lista de left columns desde merged_left
+            for c in merged_left.columns:
+                row[c] = None
+            # rellenar las columnas sin sufijo (propias de right) con valores de r
+            for c in gb_only.columns:
+                # si merged_left contiene columna con mismo nombre, asignar
+                if c in row:
+                    row[c] = r.get(c)
+                else:
+                    # intentar colocar en versión sin sufijo
+                    row[c] = r.get(c)
+            gb_only_rows.append(row)
+        gb_only_df = pd.DataFrame(gb_only_rows)
+        merged = pd.concat([merged_left, gb_only_df], ignore_index=True, sort=False)
+    else:
+        merged = merged_left
+
+    # merged ahora contiene la unión sin productos cartesianos
 
     def pick(a, b):
         # UTIL: selección simple primer valor no-nulo
@@ -157,7 +260,7 @@ def _merge_sources(gr: pd.DataFrame, gb: pd.DataFrame) -> pd.DataFrame:
 
     def mk_book_id(r):
         # GENERAR_BOOK_ID: preferir isbn13 válido; si no existe, usar clave canónica SHA1
-        # KEYWORD: GENERAR_BOOK_ID, BOOK_ID
+        # KEYWORD: GENERAR_BOOK_ID, BOOK_ID, DEDUP_LOGIC, REGION_DEDUP
         if r.get("isbn13") and is_valid_isbn13(str(r.get("isbn13"))):
             return str(r.get("isbn13"))
         return _canonical_key(r.get("titulo") or "", r.get("autor_principal") or "", r.get("editorial"), r.get("anio_publicacion"))
@@ -190,8 +293,14 @@ def _merge_sources(gr: pd.DataFrame, gb: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# REGION: DEDUPLICATION - LÓGICA DE ELIMINACIÓN DE DUPLICADOS
+# KEYWORD: DEDUP_SECTION, DEDUPLICACION_DROP, SELECCION_REGISTRO_PREFERIDO
+
 def _build_source_detail(gr: pd.DataFrame, gb: pd.DataFrame, dim: pd.DataFrame) -> pd.DataFrame:
-    """Construye tabla detalle incluyendo flags de validación por registro."""
+    """Construye tabla detalle incluyendo flags de validación por registro.
+    Añade información de candidatos y score si existe `landing/googlebooks_candidates.json`.
+    KEYWORD: SOURCE_DETAIL_CANDIDATES, MATCH_TRACE
+    """
     gr_tmp = gr.copy()
     gb_tmp = gb.copy()
 
@@ -236,6 +345,49 @@ def _build_source_detail(gr: pd.DataFrame, gb: pd.DataFrame, dim: pd.DataFrame) 
     for c in ("isbn10", "isbn13"):
         if c in detail.columns:
             detail[c] = detail[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
+
+    # Cargar candidatos si existe archivo auxiliar creado por enrich
+    candidates_path = LANDING / "googlebooks_candidates.json"
+    gb_candidates_map: Dict[str, Dict] = {}
+    if candidates_path.exists():
+        try:
+            with open(candidates_path, "r", encoding="utf-8") as f:
+                cand_list = json.load(f)
+            # mapear por rec_id o input_index para acceso rápido
+            for c in cand_list:
+                key = c.get("rec_id") or str(c.get("input_index"))
+                gb_candidates_map[key] = c
+        except Exception:
+            gb_candidates_map = {}
+
+    # Añadir columnas de candidatos y score a detail (solo para registros google_books)
+    def _get_candidates_for_row(row):
+        if row.get("source_name") != "google_books":
+            return None
+        # intentar mapear por row_number -> buscar entrada donde csv_row_number == row_number
+        matches = [v for k, v in gb_candidates_map.items() if v.get("csv_row_number") == row.get("row_number")]
+        if matches:
+            return matches[0].get("candidates")
+        # fallback: intentar usar title+author match
+        key_candidates = [v for k, v in gb_candidates_map.items() if v.get("title") == row.get("raw_title") and v.get("author") == row.get("raw_authors")]
+        if key_candidates:
+            return key_candidates[0].get("candidates")
+        return None
+
+    def _get_best_score_for_row(row):
+        if row.get("source_name") != "google_books":
+            return None
+        matches = [v for k, v in gb_candidates_map.items() if v.get("csv_row_number") == row.get("row_number")]
+        if matches:
+            return matches[0].get("best_score")
+        key_candidates = [v for k, v in gb_candidates_map.items() if v.get("title") == row.get("raw_title") and v.get("author") == row.get("raw_authors")]
+        if key_candidates:
+            return key_candidates[0].get("best_score")
+        return None
+
+    detail["gb_candidate_scores"] = detail.apply(_get_candidates_for_row, axis=1)
+    detail["gb_best_score"] = detail.apply(_get_best_score_for_row, axis=1)
+
     # Añadir flags de provenance: si este registro aportó el valor final en dim
     # Construir mapeo book_id -> registro dim (valores finales)
     try:
@@ -278,7 +430,17 @@ def integrate() -> None:
 
     detail = _build_source_detail(gr_n, gb_n, dim)
 
-    metrics = compute_quality_metrics(cast(list[Mapping[str, object]], dim.to_dict(orient="records")))
+    # Contadores de filas de entrada por fuente (para métricas de trazabilidad)
+    input_counts = {
+        "goodreads": int(len(gr_n)) if hasattr(gr_n, '__len__') else 0,
+        "google_books": int(len(gb_n)) if hasattr(gb_n, '__len__') else 0,
+    }
+
+    metrics = compute_quality_metrics(dim.to_dict(orient="records"))
+    # asegurar tipo dict para poder añadir campos sin problemas de typing
+    metrics = dict(metrics)
+    # Añadir conteo de filas de entrada para trazabilidad (landing)
+    metrics["filas_por_fuente_input"] = input_counts
 
     STANDARD.mkdir(parents=True, exist_ok=True)
     DOCS.mkdir(parents=True, exist_ok=True)
