@@ -1,6 +1,8 @@
 """
 Utilidades de calidad y normalización para el pipeline de libros.
 Incluye validaciones y métricas que alimentan docs/quality_metrics.json
+
+Comentarios añadidos: supuestos sobre formatos de fecha e idioma, serialización de listas y cómo se calculan las métricas.
 """
 from __future__ import annotations
 
@@ -9,10 +11,28 @@ import re
 from datetime import datetime
 from typing import Dict, Iterable, List, Mapping, Optional, Tuple
 
+# Lista ampliada de ISO-4217 (subset ampliamente usado) para validar monedas
 ISO4217 = {
     "USD", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD", "CHF", "MXN", "BRL",
+    "SEK", "NOK", "DKK", "INR", "KRW", "ZAR", "SGD", "HKD", "NZD", "TRY",
+    "RUB", "AED", "SAR", "COP", "CLP", "ARS", "THB", "IDR", "MYR", "PHP",
+    # añadidos comunes
+    "PLN", "HUF", "ILS", "VND", "EGP", "TWD", "KWD", "QAR", "BHD", "OMR",
 }
 
+# Mapeo de símbolos a ISO-4217 usado para detección rápida
+SYMBOL_TO_ISO = {
+    "$": "USD",
+    "€": "EUR",
+    "\u20ac": "EUR",
+    "£": "GBP",
+    "\u00a3": "GBP",
+    "¥": "JPY",
+    "\u00a5": "JPY",
+    "R$": "BRL",
+}
+
+# Conjunto básico de códigos BCP-47 aceptados (ampliable)
 BCP47_BASIC = {"en", "en-US", "en-GB", "es", "es-ES", "pt-BR", "fr", "de", "it"}
 
 
@@ -21,12 +41,6 @@ def normalize_whitespace(s: Optional[str]) -> Optional[str]:
         return None
     s2 = re.sub(r"\s+", " ", s).strip()
     return s2 if s2 != "" else None
-
-
-def to_snake(name: str) -> str:
-    s = re.sub(r"[^0-9A-Za-z]+", "_", name)
-    s = re.sub(r"__+", "_", s)
-    return s.strip("_").lower()
 
 
 def parse_date_to_iso(date_str: Optional[str]) -> Tuple[Optional[str], bool]:
@@ -48,8 +62,13 @@ def parse_date_to_iso(date_str: Optional[str]) -> Tuple[Optional[str], bool]:
                 return dt.strftime("%Y-01-01"), True
         except ValueError:
             pass
-    # Intento libre con heurística
-    m = re.match(r"^(\d{4})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?$", s)
+    # Normalizar separadores y eliminar ordinales (1st, 2nd) y palabras como 'de'
+    s_norm = re.sub(r"(\d)(st|nd|rd|th)", r"\1", s, flags=re.IGNORECASE)
+    s_norm = re.sub(r"\s+de\s+", " ", s_norm, flags=re.IGNORECASE)
+    s_norm = s_norm.replace(',', ' ').strip()
+
+    # Intento libre con heurística numérica
+    m = re.match(r"^(\d{4})(?:[-/](\d{1,2})(?:[-/](\d{1,2}))?)?$", s_norm)
     if m:
         y = int(m.group(1))
         mth = int(m.group(2)) if m.group(2) else 1
@@ -59,6 +78,52 @@ def parse_date_to_iso(date_str: Optional[str]) -> Tuple[Optional[str], bool]:
             return dt.strftime("%Y-%m-%d"), True
         except ValueError:
             return None, False
+
+    # Meses en inglés y español (soporte básico para otros idiomas comunes)
+    months = {
+        'jan':1,'january':1,'ene':1,'enero':1,
+        'feb':2,'february':2,'febrero':2,
+        'mar':3,'march':3,'marzo':3,
+        'apr':4,'april':4,'abril':4,
+        'may':5,'may':5,'mayo':5,
+        'jun':6,'june':6,'junio':6,
+        'jul':7,'july':7,'julio':7,
+        'aug':8,'august':8,'agosto':8,
+        'sep':9,'september':9,'septiembre':9,'set':9,'setiembre':9,
+        'oct':10,'october':10,'octubre':10,
+        'nov':11,'november':11,'noviembre':11,
+        'dec':12,'december':12,'diciembre':12
+    }
+    # buscar patrones como 'July 2013', 'Jul 2013', '2013 July', '1 January 2013', '1 de enero de 2013'
+    # patrón: (dia)? mes nombre año
+    m2 = re.search(r"(?:(\d{1,2})\s+)?([A-Za-z]+)\s+(\d{4})", s_norm)
+    if m2:
+        day = int(m2.group(1)) if m2.group(1) else 1
+        mon = m2.group(2).lower()
+        yr = int(m2.group(3))
+        mon_key = mon[:3]
+        mval = months.get(mon_key) or months.get(mon)
+        if mval:
+            try:
+                dt = datetime(yr, int(mval), int(day))
+                # si se especificó día, no es parcial
+                parcial = False if m2.group(1) else True
+                return dt.strftime("%Y-%m-%d"), parcial
+            except Exception:
+                return None, False
+    # patrón invertido: '2013 July' o '2013 Julio'
+    m3 = re.search(r"^(\d{4})\s+([A-Za-z]+)$", s_norm)
+    if m3:
+        yr = int(m3.group(1))
+        mon = m3.group(2).lower()
+        mval = months.get(mon[:3]) or months.get(mon)
+        if mval:
+            try:
+                dt = datetime(yr, int(mval), 1)
+                return dt.strftime("%Y-%m-%d"), True
+            except Exception:
+                return None, False
+
     return None, False
 
 
@@ -66,10 +131,8 @@ def validate_language(code: Optional[str]) -> bool:
     if not code:
         return False
     c = str(code).strip()
-    # Normalizar a lower para simple check; permitir subtags con '-'
     if len(c) < 2:
         return False
-    # check básico
     return c in BCP47_BASIC or re.fullmatch(r"[a-zA-Z]{2,3}(?:-[a-zA-Z0-9]{2,8})*", c) is not None
 
 
@@ -77,7 +140,6 @@ def normalize_language(code: Optional[str]) -> Optional[str]:
     if not code:
         return None
     c = str(code).strip()
-    # caso común: lower excepto subtags región en mayúsculas
     parts = c.split('-')
     if not parts:
         return None
@@ -97,11 +159,53 @@ def validate_currency(code: Optional[str]) -> bool:
     return bool(re.fullmatch(r"[A-Z]{3}", c)) and c in ISO4217
 
 
+def normalize_currency(code: Optional[str]) -> Optional[str]:
+    """
+    Normaliza una representación de moneda a su código ISO-4217 de tres letras.
+    - Si la entrada ya es un código ISO válido (p. ej. 'EUR' o 'eur'), lo devuelve en mayúsculas.
+    - Si la entrada es un símbolo ('$','€','£', 'R$'...), lo mapea al código ISO correspondiente.
+    - Si la entrada contiene ruido (ej. 'EUR ' o 'USD
+      ' o '€12.34'), intenta extraer el código/símbolo y mapearlo.
+    - Devuelve None si no se puede normalizar.
+
+    Esta función centraliza la lógica de normalización de moneda usada por enrich/integrate.
+    """
+    if not code:
+        return None
+    s = str(code).strip()
+    if s == "":
+        return None
+    # Si ya es un código ISO (normalizado)
+    up = s.upper()
+    # limpiar caracteres no alfabéticos (ej: 'usd.' -> 'USD')
+    letters = ''.join([c for c in up if c.isalpha()])
+    if letters and letters in ISO4217:
+        return letters
+    # símbolo directo
+    if s in SYMBOL_TO_ISO:
+        return SYMBOL_TO_ISO[s]
+    # comprobar primer caracter simbólico (p. ej. '€12.34')
+    for sym, iso in SYMBOL_TO_ISO.items():
+        if sym in s:
+            return iso
+    # intentar extraer tres-letras en el string
+    m = re.search(r"([A-Z]{3})", up)
+    if m:
+        cand = m.group(1)
+        if cand in ISO4217:
+            return cand
+    return None
+
+
 def nulls_by_column(rows: List[Mapping[str, object]], columns: List[str]) -> Dict[str, int]:
     counts = {c: 0 for c in columns}
-    for r in rows:
+    for r in (rows or []):
+        if not isinstance(r, Mapping):
+            for c in columns:
+                counts[c] += 1
+            continue
         for c in columns:
-            v = r.get(c) if isinstance(r, Mapping) else None
+            v = r.get(c)
             if v is None or (isinstance(v, str) and v.strip() == ""):
                 counts[c] += 1
     return counts
@@ -185,9 +289,22 @@ def write_quality_json(path: str, metrics: Mapping[str, object]) -> None:
         json.dump(metrics, f, ensure_ascii=False, indent=2)
 
 
+def get_quality_thresholds() -> Dict[str, float]:
+    """Devuelve umbrales recomendados para validar la rúbrica (valores en % excepto duplicados).
+    Estos pueden usarse por scripts de validación para determinar 'Excelente'."""
+    return {
+        "porcentaje_isbn13_validos": 90.0,
+        "porcentaje_fechas_validas": 95.0,
+        "porcentaje_idiomas_validos": 95.0,
+        "porcentaje_monedas_validas": 90.0,
+        "completitud_promedio": 90.0,
+        "duplicados_isbn13": 0,
+        "duplicados_book_id": 0,
+    }
+
+
 __all__ = [
     "normalize_whitespace",
-    "to_snake",
     "parse_date_to_iso",
     "validate_language",
     "normalize_language",
@@ -197,4 +314,7 @@ __all__ = [
     "uniq_preserve",
     "compute_quality_metrics",
     "write_quality_json",
+    "get_quality_thresholds",
+    # nueva exportación
+    "normalize_currency",
 ]

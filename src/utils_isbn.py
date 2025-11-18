@@ -6,11 +6,15 @@ Funciones principales:
 - is_valid_isbn10 / is_valid_isbn13: validación de checksum y formato.
 - isbn10_to_isbn13 / try_normalize_isbn: conversión y normalización consistente.
 - extract_isbns_from_text: extracción heurística desde texto libre/URLs.
+
+Supuestos:
+- Se espera que las entradas contengan posibles separadores; la normalización elimina todo excepto dígitos y 'X'.
+- Para igualdad y claves se prefiere ISBN-13 válido. Si existe ISBN-10 válido se convierte a ISBN-13.
 """
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 ISBN10_RE = re.compile(r"(?i)\b(\d[\d\-\s]{8,}[\dxX])\b")
 ISBN13_RE = re.compile(r"\b(97[89][\d\-\s]{9,}\d)\b")

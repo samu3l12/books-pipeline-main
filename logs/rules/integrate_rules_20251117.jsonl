@@ -1,0 +1,4 @@
+{"rule": "fuzzy_assign_isbn", "gr_index": 6, "assigned_isbn": "9789811110689", "score": 0.8988764044943821, "gb_index": 6, "ts_utc": "2025-11-17T14:44:40+00:00"}
+{"rule": "fuzzy_assign_isbn", "gr_index": 10, "assigned_isbn": "9781119327653", "score": 0.9021311475409837, "gb_index": 10, "ts_utc": "2025-11-17T14:44:40+00:00"}
+{"rule": "fuzzy_assign_isbn", "gr_index": 13, "assigned_isbn": "9781449336097", "score": 1.0499999999999998, "gb_index": 13, "ts_utc": "2025-11-17T14:44:40+00:00"}
+{"event": "integrate_run_summary", "ts_utc": "2025-11-17T14:44:40+00:00", "records_input": 15, "notes": "integrate_pipeline executed"}

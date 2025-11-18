@@ -1,119 +1,100 @@
 # Esquema canónico: `dim_book.parquet`
 
-Este documento describe el modelo canónico generado por `src/integrate_pipeline.py` y las reglas de mapeo, normalización y supervivencia entre fuentes (`goodreads`, `google_books`). Está pensado para cumplir la rúbrica del proyecto.
+Este documento describe el modelo canónico generado por `src/integrate_pipeline.py` y las reglas de mapeo, normalización y supervivencia entre fuentes (`goodreads`, `google_books`). Está pensado para cumplir la rúbrica del proyecto y servir como referencia rápida.
 
 Formato general
 - Formato de archivo: Parquet (Apache Arrow)
 - Convenciones:
   - Nombres de columnas en snake_case.
-  - Listas serializadas como `;`-separated strings para compatibilidad con Parquet inicial.
+  - Listas: en Parquet pueden almacenarse como listas nativas; cuando se serializan para compatibilidad se usan `;`-separated strings.
   - Fechas: ISO-8601 `YYYY-MM-DD`. Si falta día/mes se rellena con `01` y se marca `fecha_publicacion_parcial = true`.
   - Idioma: BCP-47 (ej.: `es`, `en-US`).
   - Moneda: ISO-4217 (ej.: `EUR`, `USD`).
 
-Campos mínimos (nombre, tipo, nullability, formato, ejemplo, regla y fuente preferente)
+Resumen de tablas estándar
+- `standard/dim_book.parquet`: tabla dimensional canónica (una fila por libro canónico)
+- `standard/book_source_detail.parquet`: detalle por fila original de cada fuente con trazabilidad
 
+Campos clave en `dim_book.parquet` (tipos y reglas resumidas)
 - `book_id` (string, not null)
-  - Descripción: Identificador canónico. Preferente: `isbn13` válido; fallback: SHA1 de (titulo, autor_principal, editorial, anio_publicacion).
-  - Regla: `if isbn13_valido then book_id = isbn13 else book_id = sha1(titulo|autor|editorial|anio)`.
+  - Identificador canónico. Regla: preferir `isbn13` normalizado y válido; si no hay `isbn13` válido, usar SHA1 de (titulo, autor_principal, editorial, anio_publicacion).
   - Ejemplo: `9781449374273` o `3f79bb7b435b05321651daefd374cd21`.
-  - Fuente: derivado (integración).
 
 - `titulo` (string, not null)
-  - Normalización: trim y collapse whitespace; `titulo_normalizado` se genera en minúsculas para matching.
-  - Ejemplo: `Data Science for Business`.
-  - Fuente preferente: `goodreads` > `google_books` (si `goodreads` aporta título no nulo se usa).
+  - Normalización: trim y collapse whitespace. `titulo_normalizado` (lowercased, whitespace normalized) se usa para matching.
 
 - `titulo_normalizado` (string, nullable)
   - Formato: `normalize_whitespace(lower(titulo))`.
 
 - `autor_principal` (string, nullable)
-  - Fuente preferente: `goodreads` luego `google_books`.
+  - Fuente preferente: `goodreads` > `google_books`.
 
-- `autores` (string, nullable)
-  - Formato: lista serializada separada por `;` (ej.: `Autor A;Autor B`).
+- `autores` (list[string] o string serializado, nullable)
+  - Mantener lista nativa cuando Parquet lo soporte; si no, usar `;` como separador.
 
 - `editorial` (string, nullable)
-  - Fuente preferente: `google_books` si contiene valor más completo.
-
-- `anio_publicacion` (Int, nullable)
-  - Derivado de `fecha_publicacion` (primeros 4 dígitos) si existe.
+  - Fuente preferente: `google_books` cuando añade más detalle.
 
 - `fecha_publicacion` (string, nullable)
-  - Formato: `YYYY-MM-DD` (ISO). Si parser devuelve parcial (AÑO o AÑO-MES) se normaliza añadiendo `-01` y `fecha_publicacion_parcial = true`.
-  - Validación: `parse_date_to_iso` en `src/utils_quality.py`.
-
-- `fecha_publicacion_parcial` (boolean)
-  - True si la fecha fue completada por heurística (p. ej. solo año o año-mes disponible).
+  - ISO `YYYY-MM-DD`. Metadata adicional: `fecha_publicacion_parcial` (bool) y `fecha_publicacion_valida` (bool).
+  - Parsing: `parse_date_to_iso` en `src/utils_quality.py`.
 
 - `idioma` (string, nullable)
-  - Normalización: `normalize_language(code)` (BCP-47-like). Validación: `validate_language`.
-  - Ejemplo: `en`, `es-ES`.
+  - Normalizado con `normalize_language`; flag `idioma_valido`.
 
 - `isbn10` (string, nullable)
-  - Normalización: string; intentar normalizar con `try_normalize_isbn`.
+  - Preservar si existe; BUT: cuando `isbn13` está vacío y `isbn10` existe y es válido, convertir a `isbn13` (ver regla abajo).
 
 - `isbn13` (string, nullable)
-  - Normalización: string; validación con `is_valid_isbn13`.
+  - Normalizar y validar con `try_normalize_isbn` / `is_valid_isbn13`. `isbn13_norm` y `isbn13_valido` se almacenan para auditoría.
 
-- `categoria` (string, nullable)
-  - Formato: `;`-separated categories.
+- `categoria` (list[string] o string, nullable)
+- `paginas` (Int64, nullable)
+- `formato` (string, nullable) — ej.: `BOOK`, `EBOOK`
+- `precio` (float, nullable)
+- `moneda` (string, nullable) — normalizar con `normalize_currency`; flag `moneda_valida`
 
-- `paginas` (Int, nullable)
-  - Tipo nullable `Int64` en pandas/Parquet.
-
-- `formato` (string, nullable)
-  - Ej.: `BOOK`, `EBOOK`.
-
-- `precio` (decimal/float, nullable)
-  - Normalización: `pd.to_numeric(..., errors='coerce')`.
-
-- `moneda` (string, nullable)
-  - Normalización: `normalize_currency(code)` y validación con `validate_currency`.
-  - Ejemplo: `EUR`, `USD`.
-
-- `fuente_ganadora` (string, nullable)
-  - Valores: `google_books` o `goodreads`. Regla: preferir la fuente con más campos completos (editorial, fecha_publicacion, autores) o `isbn13` si está presente.
-
+Campos de trazabilidad y métricas
+- `provenance` (JSON/string)
+  - Map por campo final indicando la fuente que aportó el valor (`goodreads`, `google_books`, `merged`, etc.). Ej.: `{"titulo":"goodreads","isbn13":"google_books"}`.
 - `ts_ultima_actualizacion` (string, not null)
-  - ISO timestamp UTC (ej.: `2025-11-17T03:19:47+00:00`).
+  - Timestamp ISO UTC de la última actualización/ingesta.
+- Flags: `isbn13_valido`, `idioma_valido`, `moneda_valida`, `fecha_publicacion_valida`.
 
-Flags y metadatos por fila (validación)
-- `isbn13_valido` (boolean)
-- `idioma_valido` (boolean)
-- `moneda_valida` (boolean)
-- `fecha_publicacion_valida` (boolean)
-- `gb_match_score` (float, nullable)
-- `titulo_source`, `autor_principal_source`, `editorial_source`, `fecha_publicacion_source`, `precio_source` (string) — indican la fuente que aportó el valor final.
+Reglas importantes (dedupe y supervivencia)
+1. Preferencia de identificación
+   - ISBN‑13 válido es la clave primaria preferente. Si existe `isbn13_valido`, agrupar/identificar por `isbn13`.
+   - Si no existe `isbn13`, construir `merge_key = titulo_normalizado|autor_principal_normalizado` y agrupar por `merge_key`.
+2. Conversión ISBN
+   - Si una fila fuente solo aporta `isbn10` válido y no hay `isbn13`, convertir `isbn10` → `isbn13` (prefijando `978` y recalculando checksum) usando `try_normalize_isbn` y usar el ISBN‑13 resultante como `isbn13` y `book_id`.
+   - Esto garantiza que el identificador canónico sea `isbn13` cuando sea posible.
+3. Selección del representante (supervivencia)
+   - Prioridad general: preferir registros con `isbn13_valido`.
+   - Dentro del mismo grupo (mismo `isbn13` o mismo `merge_key`): seleccionar la fila con mayor completitud (más campos no nulos relevantes: titulo, autor_principal, autores, editorial, fecha_publicacion, paginas).
+   - Si empate en completitud: no imponer preferencia arbitraria entre fuentes; registrar el empate en logs y conservar el primer encuentro (o aplicar criterio configurable: ejemplo `preferencia_fuente = ['google_books','goodreads']` si se define explícitamente).
+   - NO usar matching difuso automático para crear `isbn13` — sólo matching exacto en `_match_key` o título único salvo que el usuario autorice heurísticas adicionales.
+4. Merge de campos
+   - Para cada campo final: tomar el primer valor no nulo según la prioridad de fuentes definida (por defecto: `goodreads` para título/autor cuando esté presente; `google_books` para metadata editorial/fecha/precio).
+   - Para listas (autores, categorias): unir candidatos, desduplicar preservando orden.
+5. Provenance
+   - Para cada campo final se debe registrar la fuente que aportó el valor (ej.: `provenance` JSON). Si el valor final fue convertido (ej. `isbn10`→`isbn13`), la procedencia registra la fuente original y que el `isbn13` fue derivado de `isbn10` de `google_books`.
 
-Archivo `book_source_detail.parquet`
-- Contiene por cada fila original de cada fuente un registro con las columnas:
-  - `source_id` (string): identificador del registro en la fuente (rec_id, url o índice).
-  - `source_name` (string): `goodreads` o `google_books`.
-  - `source_file` (string): nombre del fichero en `landing/`.
-  - `row_number` (int): fila original en el CSV (para Google Books) o índice en el JSON.
-  - `book_id_candidato` (string): isbn13 o id_canónico calculado para candidato.
-  - `campos_originales` (JSON/string): mapeo original de campos leídos de la fuente.
-  - `flags_validacion` (JSON/string): `isbn13_valido`, `idioma_valido`, `moneda_valida`, `fecha_publicacion_valida`.
-  - `provenance_by_field` (JSON/string): para cada campo final en `dim_book` se registra la fuente que aportó el valor.
-  - `ts_ingesta` (string): timestamp ISO de la ingesta.
+`book_source_detail.parquet` (detalle y trazabilidad)
+- Objetivo: conservar una fila por registro original de las fuentes con metadatos de validación y trazabilidad.
+- Columnas clave:
+  - `source_name` (`goodreads` | `google_books`)
+  - `source_file` (nombre del fichero en `landing/`)
+  - `row_number` (int): índice original en la fuente
+  - `book_id_candidato` (string): isbn13/isbn10 o id calculado para el candidato
+  - `isbn13_valido`,`ts_ingest` (timestamp)
+  - `provenance_by_field` / `campos_originales`: snapshot de campos originales y flags de validación
 
-Reglas de deduplicación y supervivencia (resumen)
-1. Clave primaria preferente: `isbn13` válido. Si existe, agrupar por `isbn13`.
-2. Si falta `isbn13`, generar `merge_key = titulo_normalizado|autor_principal_normalizado` y agrupar por `merge_key`.
-3. Selección del registro sobreviviente (por grupo):
-   - Preferir registro con `isbn13_valido`.
-   - Preferir registro con mayor número de campos no nulos (completitud).
-   - Preferir fuente con prioridad configurable (por defecto: `google_books` > `goodreads`).
-   - Si empate, preferir `anio_publicacion` más reciente y luego `precio` no nulo.
-4. Merge de campos: tomar el primer valor no nulo según la prioridad de fuentes; para listas (autores, categorias) unir y desduplicar preservando orden.
+Logs y trazabilidad
+- Las decisiones relevantes (ambigüedades, asignaciones por matching, conversiones ISBN) se registran en `work/logs/rules/integrate_rules_<fecha>.jsonl` mediante `log_rule_jsonl`.
+- Las requests a Google Books y las ejecuciones del scraper se loguean en `work/logs/requests/`.
+- Resumen del run y métricas se guardan en `docs/quality_metrics.json`.
 
-Provenance y trazabilidad
-- Cada decisión de asignación (por ejemplo asignación de ISBN desde candidatos) queda registrada en `work/logs/rules/integrate_rules_<fecha>.jsonl` mediante `log_rule_jsonl`.
-- Cada request a Google Books y cada scraping a GoodReads queda registrado en `work/logs/requests/<source>_<yyyyMMdd>.csv` mediante `log_request_csv`.
-- Se guarda un resumen del run en `work/logs/runs/run_<ts>.json` con métricas parciales.
-
-Notas finales
-- `docs/schema.md` debe mantenerse sincronizado con el código; cualquier cambio en `src/integrate_pipeline.py` que añada/renombre campos debe reflejarse aquí.
-- `docs/quality_metrics.json` contiene las métricas calculadas por ejecución y sirve para validar la rúbrica.
-
+Notas operativas y de evolución
+- No eliminar columnas all-null de forma automática: la eliminación debe ser deliberada y documentada (puede perderse trazabilidad si se hace por defecto).
+- Mantener sincronizado `docs/schema.md` con cambios en `src/integrate_pipeline.py` y utilidades.
+- Para depurar problemas de matching y provenance, usar `scripts/diagnose_parquet.py` (herramienta de diagnóstico incluida) y revisar `work/logs/rules`.

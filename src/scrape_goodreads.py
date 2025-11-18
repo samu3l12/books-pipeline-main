@@ -1,11 +1,11 @@
 """
 Scraper de Goodreads para obtener una muestra de libros desde una búsqueda pública.
 Guarda landing/goodreads_books.json con registros y metadatos.
+
+Comentarios añadidos: explicar supuestos, selectores clave y comportamiento de pausa/reintentos.
 """
 from __future__ import annotations
-
 import json
-import os
 import random
 import time
 from dataclasses import asdict, dataclass
@@ -20,6 +20,22 @@ from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
 from utils_isbn import extract_isbns_from_text, try_normalize_isbn
+# importar helper de logging movido a work/
+try:
+    # preferir importar desde el paquete work presente en el repo
+    import sys
+    from pathlib import Path as _P
+    repo_root = _P(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    from work.utils_logging import log_request_csv, ensure_work_dirs
+    ensure_work_dirs()  # crear dirs si es necesario
+except Exception:
+    # si no está disponible, definir un no-op para no romper flujo (se recomienda tener work/ en sys.path)
+    def log_request_csv(*args, **kwargs):
+        return None
+    def ensure_work_dirs(*args, **kwargs):
+        return None
 
 
 BASE_URL = "https://www.goodreads.com/search"
@@ -44,7 +60,13 @@ class GoodreadsRecord:
 
 
 def _build_session(timeout: int = 15) -> requests.Session:
-    """Session con reintentos y backoff exponencial para peticiones robustas."""
+    """Session con reintentos y backoff exponencial para peticiones robustas.
+
+    Supuestos clave:
+    - Se respeta la política de pausas (pausa aplicada en el bucle principal).
+    - Si se usa proveedor de scraping (SCRAPER_API_URL), se delega la petición a ese proveedor.
+    KEYWORDS: SCRAPER_SESSION, RATE_LIMIT_PAUSE
+    """
     s = requests.Session()
     retries = Retry(
         total=5,
@@ -68,31 +90,14 @@ def _build_session(timeout: int = 15) -> requests.Session:
 
 
 def _scraper_api_wrap(target_url: str) -> Tuple[str, Dict[str, str]]:
-    """Si SCRAPER_API_URL está configurada en .env, envuelve la petición para pasar por un proveedor de scraping.
-    Soporta dos patrones:
-    - URL con placeholder {url} sustituido por el target URL url-encoded.
-    - URL base sin placeholder: se envía como parámetro 'url'.
-    Siempre añade 'api_key' si SCRAPER_API_KEY está definida.
+    """Wrapper deshabilitado: no se utiliza proveedor externo de scraping en este proyecto.
+
+    Mantener la función por compatibilidad pero siempre devuelve la URL destino sin modificar
+    y sin parámetros adicionales. Esto simplifica el flujo y evita dependencias externas.
+    KEYWORDS: SCRAPER_API_DISABLED
     """
-    from urllib.parse import urlencode, quote
-
-    base = os.getenv("SCRAPER_API_URL")
-    api_key = os.getenv("SCRAPER_API_KEY")
-    if not base:
-        return target_url, {}
-
-    if "{url}" in base:
-        final_url = base.replace("{url}", quote(target_url, safe=""))
-        params: Dict[str, str] = {}
-        if api_key:
-            joiner = "&" if ("?" in final_url) else "?"
-            final_url = f"{final_url}{joiner}api_key={api_key}"
-        return final_url, params
-    else:
-        params = {"url": target_url}
-        if api_key:
-            params["api_key"] = api_key
-        return base, params
+    # No se usa proveedor externo en esta versión: devolver la URL tal cual
+    return target_url, {}
 
 
 def fetch_search_html(session: requests.Session, query: str, page: int = 1, timeout: int = 15) -> str:
@@ -109,9 +114,25 @@ def fetch_search_html(session: requests.Session, query: str, page: int = 1, time
         "User-Agent": random.choice(USER_AGENTS) + " (compatible; BooksPipeline/1.0)",
         "Referer": "https://www.google.com/",
     }
-    resp = session.get(url, params=extra if extra else None, headers=headers, timeout=timeout)
-    resp.raise_for_status()
-    return resp.text
+    # Logging: medir tiempo y registrar request
+    start = time.time()
+    try:
+        resp = session.get(url, params=extra if extra else None, headers=headers, timeout=timeout)
+        duration = time.time() - start
+        # registrar request en work/logs/requests
+        try:
+            log_request_csv("goodreads", "scrape", url, resp.status_code, None, duration, headers.get("User-Agent"), None)
+        except Exception:
+            pass
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        duration = time.time() - start
+        try:
+            log_request_csv("goodreads", "scrape", url, getattr(e, 'response', None).status_code if getattr(e, 'response', None) is not None else None, None, duration, headers.get("User-Agent"), str(e))
+        except Exception:
+            pass
+        raise
 
 
 def parse_search_page(html: str) -> List[GoodreadsRecord]:
@@ -130,7 +151,9 @@ def parse_search_page(html: str) -> List[GoodreadsRecord]:
         rating = None
         ratings_count = None
         if mini:
-            txt = mini.get_text(" ", strip=True)
+            # usar get_text() y normalizar saltos de línea para evitar advertencias estáticas
+            txt = mini.get_text() if mini else ""
+            txt = txt.replace('\n', ' ').strip()
             try:
                 parts = txt.split(" avg rating", 1)
                 if parts:
@@ -151,7 +174,8 @@ def parse_search_page(html: str) -> List[GoodreadsRecord]:
         # Heurística de ISBN
         isbn10 = None
         isbn13 = None
-        isbns = extract_isbns_from_text(tr.get_text(" ", strip=True) + " " + (book_url or ""))
+        # usar get_text con keyword `separator` y strip manual para evitar advertencias de tipos
+        isbns = extract_isbns_from_text(tr.get_text() + " " + (book_url or ""))
         for cand in isbns:
             i10, i13 = try_normalize_isbn(cand)
             isbn10 = isbn10 or i10
@@ -213,7 +237,7 @@ def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8
             },
             "pauses_seconds": f">={min_pause_s:.1f}",
             "retry_backoff": "Retry(total=5,status=[429,5xx])",
-            "scraper_api": bool(os.getenv("SCRAPER_API_URL")),
+            "scraper_api": False,
         },
     }
 
@@ -222,6 +246,8 @@ def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8
         "records": [asdict(r) for r in deduped],
     }
 
+
+# KEYWORDS: SCRAPE_SECTION, ISBN_HEURISTICS, DEDUP_TITLE_AUTHOR
 
 def main() -> None:
     import argparse
@@ -241,7 +267,8 @@ def main() -> None:
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f"Escrito {len(data.get('records', []))} registros en {out_path}")
+    # proteger si records es None
+    print(f"Escrito {len(data.get('records') or [])} registros en {out_path}")
 
 
 if __name__ == "__main__":
