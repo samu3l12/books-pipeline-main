@@ -4,5 +4,5 @@
 /.github/
 /scripts/
 /work/
-
+/.idea/
 .env
