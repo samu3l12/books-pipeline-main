@@ -2,31 +2,27 @@
 
 Resumen
 
-Proyecto con un flujo sencillo Extracción → Enriquecimiento → Integración destinado a obtener una muestra de libros desde Goodreads, enriquecer con la Google Books API y producir artefactos canónicos (.parquet) con controles de calidad y trazabilidad.
+Proyecto con un flujo: Extracción → Enriquecimiento → Integración destinado a obtener una muestra de libros desde Goodreads, enriquecer con la Google Books API y producir artefactos canónicos (.parquet) con controles de calidad y trazabilidad.
 
-Objetivo de este README: documentar exactamente cómo el repo satisface la rúbrica y dónde encontrar evidencia para cada criterio.
+---
 
-Estructura mínima requerida (presente en este repo)
+Índice rápido
 
-- README.md (este fichero)
-- requirements.txt
-- .env.example
-- landing/
-  - goodreads_books.json
-  - googlebooks_books.csv
-  - googlebooks_candidates.json
-- standard/
-  - dim_book.parquet
-  - book_source_detail.parquet
-- docs/
-  - schema.md
-  - quality_metrics.json
-- src/
-  - scrape_goodreads.py
-  - enrich_googlebooks.py
-  - integrate_pipeline.py
-  - utils_quality.py
-  - utils_isbn.py
+- Requisitos
+- Instalación
+- Uso (comandos)
+- Variables de entorno importantes
+- Cómo funciona (resumen visual)
+- Ficheros generados y trazabilidad
+- Solución de problemas rápida
+
+---
+
+Requisitos
+
+- Python 3.10+ (probado con 3.14)
+- pip
+- Acceso a internet para llamadas a Goodreads y Google Books (si se usa)
 
 Dependencias (ver `requirements.txt`)
 
@@ -37,119 +33,136 @@ Dependencias (ver `requirements.txt`)
 - pyarrow
 - python-dotenv
 
-Cómo ejecutar (sin parámetros)
+Instalación (rápida)
 
-Los scripts se ejecutan desde la raíz del proyecto y funcionan con valores por defecto; se recomienda usar PowerShell en Windows:
+PowerShell (Windows):
 
-- Extraer (Goodreads → JSON):
-  - python .\src\scrape_goodreads.py
-  - Salida: `landing/goodreads_books.json` (UTF-8, JSON con metadatos)
+```powershell
+# Crear y activar entorno virtual
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+# Instalar dependencias
+pip install -r requirements.txt
+```
 
-Nota sobre extracción de ISBN desde páginas individuales
+Linux / macOS (bash):
 
-- Control de extracción de ISBN: puedes habilitar/deshabilitar que el scraper visite la página individual del libro para intentar extraer ISBNs adicionales y otros campos (fecha, precio). Esto se controla con la variable de entorno `GOODREADS_USE_ISBN`:
-  - `GOODREADS_USE_ISBN=1` (valor por defecto en `.env.example`): el scraper intentará extraer ISBNs desde la página individual cuando `--fetch-details` esté activo.
-  - `GOODREADS_USE_ISBN=0`: aunque `--fetch-details` esté activo, el scraper no intentará extraer ISBNs desde la página del libro; seguirá extrayendo otros campos si están disponibles en la página de resultados.
-  - Nota: `--fetch-details` sigue controlando si se visitan páginas individuales para extraer `pub_date` y `price`; `GOODREADS_USE_ISBN` solamente condiciona si dentro de esa visita se intentan extraer ISBN adicionales.
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-- Enriquecer (Google Books → CSV + candidatos):
-  - Añadir variable `GOOGLE_BOOKS_API_KEY` en `.env` o en variables de entorno. El script de enriquecimiento requiere la clave; si no está presente lanzará un error.
-  - python .\src\enrich_googlebooks.py
-  - Salida: `landing/googlebooks_books.csv` (UTF-8, separador coma) y `landing/googlebooks_candidates.json` (trazabilidad de candidatos)
+Preparar variables de entorno
 
-- Integrar (JSON+CSV → Parquet + métricas):
-  - python .\src\integrate_pipeline.py
-  - Salida: `standard/dim_book.parquet`, `standard/book_source_detail.parquet`, `docs/quality_metrics.json`
+- Copia el ejemplo de variables y edítalo según necesites:
 
-Breve nota sobre logging y trazabilidad
+```powershell
+copy .env.example .env  # PowerShell
+```
 
-- Los scripts intentan usar `work.utils_logging` para escribir trazabilidad en `work/logs/requests/`, `work/logs/rules/` y `work/logs/runs/`. Si `work` no está disponible, el pipeline sigue funcionando con fallbacks no operativos (no se lanzan excepciones).
+- Edita `.env` y añade tu `GOOGLE_BOOKS_API_KEY` si quieres usar el enriquecimiento.
+- Variable nueva importante: `GOODREADS_USE_ISBN` (ver más abajo).
 
-Cómo funciona el scraping de Goodreads (resumen técnico)
+Uso — comandos principales
 
-- URL base: `https://www.goodreads.com/search`.
-- Peticiones: el scraper construye la URL con parámetros `q` (consulta) y `page` y realiza un GET sobre la página de resultados.
-- User-Agent: rota entre varios UA comunes y añade un sufijo `(compatible; BooksPipeline/1.0)`.
-- Retries/backoff: usa una `requests.Session` con `Retry(total=5, backoff_factor=0.6)` para manejar 429/5xx y reintentos automáticos.
-- Pausas éticas: tras cada página se aplica una pausa aleatoria mínima `min_pause_s` (por defecto 0.8s) más un componente aleatorio (hasta ~0.8s). En el código por defecto se scrapean hasta `max_pages=3` y `max_records=15`.
-- Selectores principales (documentados en metadatos):
-  - Título: `a.bookTitle span`
-  - Autor: `a.authorName span`
-  - Rating: `span.minirating`
-  - URL libro: `a.bookTitle`
-- Extracción de ISBN: se aplica una heurística sobre el texto del `tr` y sobre los enlaces del resultado para intentar extraer `isbn10`/`isbn13` usando `src/utils_isbn.py`. Además, si `--fetch-details` está activo y `GOODREADS_USE_ISBN=1`, el scraper visitará la página individual y buscará ISBNs adicionales en el HTML de la página de libro.
-- Deduplificación: después de recolectar registros se deduplica por (title.lower(), author.lower()) y se filtran registros sin título o autor.
-- Metadatos: el JSON de salida incluye `metadata` con `selectors`, `user_agent`, `fetched_at`, `record_count`, `notes.pauses_seconds` y `retry_backoff`.
+Nota: los ejemplos siguientes están pensados para PowerShell en Windows; en bash sustituye la sintaxis de variables de entorno si hace falta.
 
-Cómo funciona `enrich_googlebooks.py` (resumen técnico)
+1) Scrape — extraer desde Goodreads → JSON
 
-- Requisito: necesita la variable de entorno `GOOGLE_BOOKS_API_KEY`. Si no existe, la función `enrich` rompe con RuntimeError.
-- Endpoint usado: `https://www.googleapis.com/books/v1/volumes`.
-- Construcción de la query `q`:
-  - Si existe un `isbn13` válido, se envía `q=isbn:...` (búsqueda por ISBN, prioritaria).
-  - Si no hay ISBN, se construye una query concatenando campos (título, `inauthor:`, `inpublisher:`, `subject:`, `lccn:`, `oclc:`) y reemplazando espacios por `+`. Se solicita `maxResults=5` para obtener varios candidatos.
-- Retries/backoff: la sesión de requests incluye `Retry(total=4, backoff_factor=0.5)` y se aplica una pausa entre llamadas configurable con `GOOGLE_BOOKS_RATE_LIMIT` (por defecto 0.6s).
-- Selección del mejor candidato: si la API devuelve varios `items`, se aplica un scoring que combina:
-  - Coincidencia de ISBN (match exacto suma peso grande).
-  - Similitud de título (Levenshtein normalizado + token overlap).
-  - Solapamiento de autor (token overlap).
-  - Empates: preferir item con ISBN-13; si persiste empate, preferir fecha de publicación más reciente.
-- Extracción de campos: el código mapea campos de `volumeInfo` y `saleInfo` a columnas del CSV: `gb_id, title, subtitle, authors, publisher, pub_date, language, categories, isbn13, isbn10, price_amount, price_currency, paginas, formato`.
-- Normalización: moneda se normaliza a ISO-4217 cuando es posible; precios se intentan parsear a float y se escriben con punto decimal; listas (authors, categories) se serializan con `;`.
-- Trazabilidad de candidatos: para cada registro de entrada se escribe un elemento en `googlebooks_candidates.json` con `rec_id`, `input_index`, `csv_row_number`, `title`, `author`, `isbn13_input`, `candidates` (lista con score) y `best_score`.
-- Salida: `landing/googlebooks_books.csv` (solo filas para las entradas con match) y `landing/googlebooks_candidates.json`.
+- Scrape básico (solo lista de resultados):
 
-Decisiones clave y mapeo contra la rúbrica
+```powershell
+python .\src\scrape_goodreads.py --query "data science" --max-records 15 --max-pages 3
+```
 
-A continuación se documenta cada criterio de la rúbrica con la evidencia correspondiente (archivos y ubicaciones):
+- Scrape visitando la página individual de cada libro (extrae fechas/precios; opcionalmente ISBNs según la variable de entorno):
 
-1) Estructura del repositorio
-   - Evidencia: listado de ficheros en la raíz; `landing/`, `standard/`, `docs/` y `src/` presentes.
+```powershell
+# habilitar extracción de ISBN desde la página del libro (opcional)
+$env:GOODREADS_USE_ISBN='1'
+python .\src\scrape_goodreads.py --query "data science" --max-records 15 --max-pages 3 --fetch-details --detail-pause 1.0
+```
 
-2) Scraping Goodreads (JSON válido) 
-   - Evidencia: `landing/goodreads_books.json` contiene 15 registros (metadata.record_count = 15) y campos: title/titulo, author/autor_principal, rating, ratings_count, book_url, isbn10/isbn13 (cuando están). Metadatos con `selectors`, `user_agent`, `fetched_at` y `pauses_seconds`.
+- Si quieres visitar páginas individuales pero NO extraer ISBNs desde ellas:
 
-3) Metadatos de landing y ética de scraping — Estado: Done
-   - Evidencia: `landing/goodreads_books.json` -> `metadata.selectors`, `metadata.user_agent`, `metadata.fetched_at`, `metadata.record_count`, `metadata.notes.pauses_seconds`.
-   - Pausas y backoff documentadas en `src/scrape_goodreads.py`.
+```powershell
+$env:GOODREADS_USE_ISBN='0'
+python .\src\scrape_goodreads.py --query "data science" --max-records 15 --max-pages 3 --fetch-details --detail-pause 1.0
+```
 
-4) Enriquecimiento Google Books (CSV válido) — Estado: Done (parcial normalización)
-   - Evidencia: `landing/googlebooks_books.csv` con cabecera UTF-8 y campos: gb_id,title,subtitle,authors,publisher,pub_date,language,categories,isbn13,isbn10,price_amount,price_currency,paginas,formato.
-   - `landing/googlebooks_candidates.json` contiene candidatos con score; `src/enrich_googlebooks.py` solicita `maxResults=5` y genera scoring.
+Salida: `landing/goodreads_books.json` (contiene `metadata` y `records`).
 
-5) Modelo canónico y mapa de campos
-   - Evidencia: `docs/schema.md` describe el modelo canónico (`dim_book.parquet`) y reglas de supervivencia.
-   - `src/integrate_pipeline.py` contiene función `_canonical_key` y creación de `book_id` preferente por `isbn13`.
+2) Enrich — Google Books → CSV (+ candidatos)
 
-6) Normalización semántica — Estado:
-   - Evidencia: `src/utils_quality.py` incluye `parse_date_to_iso`, `normalize_language`, `validate_language`, `normalize_currency` y `validate_currency`.
-   - `integrate_pipeline` aplica `_apply_semantic_normalization` para fechas, idioma, moneda y precio. Algunos valores nulos/invalidos aparecen en `docs/quality_metrics.json` y pueden requerir mayor cobertura.
+```powershell
+# Asegúrate de tener GOOGLE_BOOKS_API_KEY en .env o en variables de entorno
+python .\src\enrich_googlebooks.py --input .\landing\goodreads_books.json --output .\landing\googlebooks_books.csv
+```
 
-7) Integración, deduplicación y provenance — Estado: Implementado con trazabilidad básica
-   - Evidencia: `standard/book_source_detail.parquet` contiene flags `valid` y `exclude_reason` y `provenance_by_field` en `dim`.
-   - Reglas: prioridad `isbn13` > canonical key; supervivencia basada en score compuesto y `fuente_ganadora`.
+Salida: `landing/googlebooks_books.csv` y `landing/googlebooks_candidates.json`.
 
-8) Aserciones y métricas de calidad
-   - Evidencia: `docs/quality_metrics.json` generado y `src/utils_quality.compute_quality_metrics` usado.
-   - Se añadieron aserciones soft en `integrate_pipeline`, y `ASSERT_UNIQUENESS_BOOK_ID` configurable.
+3) Integrar — JSON + CSV → Parquet + métricas
 
-9) Artefactos estándar (Parquet + docs) — Estado: Done
-   - Evidencia: `standard/dim_book.parquet` y `standard/book_source_detail.parquet` escritos; `docs/schema.md` y `docs/quality_metrics.json` presentes.
+```powershell
+python .\src\integrate_pipeline.py
+```
 
-Trazabilidad y logs
+Salida: `standard/dim_book.parquet`, `standard/book_source_detail.parquet`, `docs/quality_metrics.json`.
 
-- `work/utils_logging.py` escribe logs en `work/logs/requests/` (requests por fuente), `work/logs/rules/` (reglas aplicadas) y `work/logs/runs/` (resumen de ejecución). El pipeline llama a `log_rule_jsonl` cuando existe el módulo `work.utils_logging`.
-- `integrate_pipeline.py` registra en `work/logs` con `log_rule_jsonl` y asegura que la carpeta no quede vacía.
+4) Validar métricas
 
-Notas de robustez y consideraciones técnicas
-
-- Para evitar errores de pyarrow al escribir Parquet, `integrate_pipeline._safe_write_parquet` escribe en fichero temporal y reemplaza atómicamente, y normaliza columnas objetos serializando dicts/listas a JSON. Esto evita el ArrowTypeError causado por tipos mixtos.
-- El pipeline no modifica archivos dentro de `landing/`.
-
-
-Contacto y autoría
-
-- Código principal: carpeta `src/`.
-- Logs y trazabilidad: carpeta `work/logs/`.
+```powershell
+python .\scripts\validate_outputs.py
+```
 
 ---
+
+Variables de entorno importantes (resumen)
+
+- `GOOGLE_BOOKS_API_KEY`: (requerido para `enrich_googlebooks.py`) clave de la API de Google Books.
+- `GOODREADS_USE_ISBN` (nuevo): controla si, al visitar la página individual del libro (cuando `--fetch-details` está activo), se intentan extraer ISBNs desde el HTML de la página.
+  - `GOODREADS_USE_ISBN=1` (por defecto): el scraper intentará extraer ISBNs desde la página del libro.
+  - `GOODREADS_USE_ISBN=0`: no intentará extraer ISBNs desde la página del libro, aunque sí podrá extraer fecha/precio si `--fetch-details` está activo.
+
+---
+
+Cómo funciona (resumen visual)
+
+1) Scrape (Goodreads)
+- Construye URL: `https://www.goodreads.com/search?q=<query>&page=<n>`
+- Parsea lista de resultados (selectores): título, autor, rating, enlace al libro
+- Opcional: visita página individual (`--fetch-details`) para extraer fecha y precio y, si `GOODREADS_USE_ISBN=1`, también ISBNs
+- Guarda `landing/goodreads_books.json` con `metadata` y `records`
+
+2) Enrich (Google Books)
+- Para cada registro intenta buscar por `isbn:...` si hay ISBN; si no, construye una query por título/autor
+- Obtiene candidatos, calcula score y guarda el mejor en `landing/googlebooks_books.csv`
+- Guarda `landing/googlebooks_candidates.json` con trazabilidad de candidatos
+
+3) Integrate
+- Carga `landing/*.json` y `landing/*.csv`
+- Normaliza campos (fecha ISO, idioma BCP-47, moneda ISO-4217, precio float)
+- Fusiona por `isbn13` y por clave de título+autor
+- Genera `standard/dim_book.parquet` y `standard/book_source_detail.parquet`
+- Calcula métricas y escribe `docs/quality_metrics.json`
+
+---
+
+Archivos generados 
+
+- landing/goodreads_books.json — resultados del scraper con metadatos
+- landing/googlebooks_books.csv — filas enriquecidas desde Google Books
+- landing/googlebooks_candidates.json — candidatos evaluados por entrada
+- standard/dim_book.parquet — tabla dimensional canónica
+- standard/book_source_detail.parquet — detalle por fila de origen
+- docs/quality_metrics.json — métricas de calidad y aserciones
+
+Solución rápida de problemas
+
+- Si `enrich_googlebooks.py` falla por la API: revisa `GOOGLE_BOOKS_API_KEY` en `.env`.
+- Si `integrate_pipeline.py` falla al escribir Parquet en Windows: asegúrate de que no haya locks en los ficheros y prueba a borrar `standard/*.parquet` antes de reintentar.
+- Si el scraper devuelve pocas fechas/monedas: ejecuta con `--fetch-details` (visita páginas) y aumenta `--detail-pause` para reducir riesgo de bloqueo.
+
+---
+
