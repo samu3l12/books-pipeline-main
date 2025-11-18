@@ -18,6 +18,16 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from dotenv import load_dotenv
+import re
+
+# Mapeo simple de símbolos a ISO-4217 (uso local para extracción de precio)
+SYMBOL_TO_ISO = {
+    "$": "USD",
+    "€": "EUR",
+    "£": "GBP",
+    "¥": "JPY",
+    "R$": "BRL",
+}
 
 from utils_isbn import extract_isbns_from_text, try_normalize_isbn
 # importar helper de logging movido a work/
@@ -39,6 +49,10 @@ except Exception:
 
 
 BASE_URL = "https://www.goodreads.com/search"
+# Leer variable de entorno para controlar si extraer ISBNs desde la página individual
+from os import getenv
+GOODREADS_USE_ISBN = int(getenv('GOODREADS_USE_ISBN', '1') or 1)
+
 # Rotación simple de User-Agents comunes
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0 Safari/537.36",
@@ -57,6 +71,9 @@ class GoodreadsRecord:
     book_url: Optional[str]
     isbn10: Optional[str]
     isbn13: Optional[str]
+    pub_date: Optional[str] = None
+    price_amount: Optional[float] = None
+    price_currency: Optional[str] = None
 
 
 def _build_session(timeout: int = 15) -> requests.Session:
@@ -182,11 +199,128 @@ def parse_search_page(html: str) -> List[GoodreadsRecord]:
             isbn13 = isbn13 or i13
             if isbn13:
                 break
-        out.append(GoodreadsRecord(title, author, rating, ratings_count, book_url, isbn10, isbn13))
+        # crear registro con campos básicos; detalles adicionales pueden obtenerse
+        # visitando la página del libro (opcional)
+        out.append(GoodreadsRecord(
+            title=title,
+            author=author,
+            rating=rating,
+            ratings_count=ratings_count,
+            book_url=book_url,
+            isbn10=isbn10,
+            isbn13=isbn13,
+        ))
     return out
 
 
-def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8, max_pages: int = 3, timeout: int = 15) -> Dict[str, object]:
+def _fetch_book_page_details(session: requests.Session, book_url: str, timeout: int = 15) -> Dict[str, Optional[object]]:
+    """Recupera la página individual del libro y extrae heurísticamente fecha de publicación,
+    precio y posibles ISBN adicionales. Devuelve un dict con claves: isbn10, isbn13, pub_date,
+    price_amount, price_currency.
+    La implementación usa heurísticas no intrusivas (sin render JS)."""
+    try:
+        resp = session.get(book_url, timeout=timeout)
+        resp.raise_for_status()
+        html = resp.text or ""
+        soup = bs4.BeautifulSoup(html, "lxml")
+
+        text = soup.get_text().strip()
+
+        # EXTRAER ISBN desde el texto completo de la página
+        found = []
+        # Solo intentar extraer ISBNs desde la página del libro si la variable de entorno lo permite
+        if GOODREADS_USE_ISBN:
+            found = extract_isbns_from_text(text + " " + (book_url or ""))
+        isbn10 = None
+        isbn13 = None
+        for cand in found:
+            i10, i13 = try_normalize_isbn(cand)
+            isbn10 = isbn10 or i10
+            isbn13 = isbn13 or i13
+            if isbn13:
+                break
+
+        # EXTRAER fecha de publicación: buscar línea con 'Published' en el bloque de detalles
+        pub_date = None
+        details_block = None
+        for sel in ("#details", "#bookDataBox", "div.details", "div#description"):
+            el = soup.select_one(sel)
+            if el:
+                details_block = el.get_text().strip()
+                break
+        search_text = (details_block or text)
+        # patrones posibles: 'Published October 31st 2013', 'Published 2013', 'Published October 2013 by Publisher'
+        m = re.search(r"Published\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s*\d{4})", search_text)
+        if not m:
+            m = re.search(r"Published\s+([A-Za-z]+\s+\d{4})", search_text)
+        if not m:
+            m = re.search(r"Published\s+(\d{4})", search_text)
+        if m:
+            pub_date = m.group(1).strip()
+
+        # EXTRAER precio: buscar meta tags o patrones con símbolo de moneda
+        price_amount = None
+        price_currency = None
+        # 1) meta itemprop price
+        meta_price = soup.select_one('meta[itemprop="price"]')
+        if meta_price and meta_price.get('content'):
+            cand = str(meta_price.get('content'))
+            cleaned = re.sub(r"[^0-9.,-]", "", cand)
+            cleaned = cleaned.replace(',', '.')
+            try:
+                price_amount = float(cleaned)
+            except Exception:
+                price_amount = None
+        # 2) buscar patrones con símbolo en la página
+        if price_amount is None:
+            # clasde de símbolos: evitar duplicar '$' en la clase
+            m2 = re.search(r"([€£¥R$])\s?([0-9]+[0-9.,]*)", html)
+            if m2:
+                sym = m2.group(1)
+                val = m2.group(2)
+                val_clean = val.replace(',', '.')
+                try:
+                    price_amount = float(val_clean)
+                    price_currency = SYMBOL_TO_ISO.get(sym)
+                except Exception:
+                    price_amount = None
+        # 3) intentar buscar elementos con clase 'buy' o 'price'
+        if price_amount is None:
+            price_el = soup.select_one(".buyButton, .price, .retailPrice, .purchase")
+            if price_el:
+                txt = price_el.get_text().strip()
+                m3 = re.search(r"([€£¥R$])\s?([0-9]+[0-9.,]*)", txt)
+                if m3:
+                    sym = m3.group(1)
+                    val = m3.group(2)
+                    try:
+                        price_amount = float(val.replace(',', '.'))
+                        price_currency = SYMBOL_TO_ISO.get(sym)
+                    except Exception:
+                        price_amount = None
+
+        # si tenemos símbolo suelto en HTML, intentar mapear currency
+        if price_currency is None and price_amount is not None:
+            # buscar el símbolo usado cerca de la primera ocurrencia del número
+            m_sym = re.search(r"([€$£¥R$])\s?%s" % re.escape(str(int(price_amount))[:3]), html)
+            if m_sym:
+                price_currency = SYMBOL_TO_ISO.get(m_sym.group(1))
+
+        return {
+            "isbn10": isbn10,
+            "isbn13": isbn13,
+            "pub_date": pub_date,
+            "price_amount": price_amount,
+            "price_currency": price_currency,
+        }
+    except Exception:
+        # no romper el flujo si la página falla; devolver None en campos
+        return {"isbn10": None, "isbn13": None, "pub_date": None, "price_amount": None, "price_currency": None}
+
+
+# KEYWORDS: SCRAPE_SECTION, ISBN_HEURISTICS, DEDUP_TITLE_AUTHOR
+
+def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8, max_pages: int = 3, timeout: int = 15, fetch_details: bool = False, detail_pause_s: float = 1.0) -> Dict[str, object]:
     load_dotenv()
     session = _build_session(timeout=timeout)
 
@@ -238,16 +372,41 @@ def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8
             "pauses_seconds": f">={min_pause_s:.1f}",
             "retry_backoff": "Retry(total=5,status=[429,5xx])",
             "scraper_api": False,
+            "detail_fetch": fetch_details,
+            "detail_pause_seconds": f">={detail_pause_s:.1f}",
         },
     }
+
+    # Opción: recuperar detalles (fecha/precio) visitando cada book_url.
+    if fetch_details:
+        for r in deduped:
+            if r.book_url:
+                try:
+                    details = _fetch_book_page_details(session, r.book_url, timeout=timeout)
+                    if details:
+                        # preferir datos ya presentes, solo rellenar faltantes o mejorar
+                        if not r.isbn10 and details.get("isbn10"):
+                            r.isbn10 = details.get("isbn10")
+                        if not r.isbn13 and details.get("isbn13"):
+                            r.isbn13 = details.get("isbn13")
+                        if details.get("pub_date"):
+                            r.pub_date = details.get("pub_date")
+                        if details.get("price_amount") is not None:
+                            r.price_amount = details.get("price_amount")
+                        if details.get("price_currency"):
+                            r.price_currency = details.get("price_currency")
+                except Exception:
+                    pass
+                try:
+                    time.sleep(detail_pause_s)
+                except Exception:
+                    time.sleep(0.5)
 
     return {
         "metadata": meta,
         "records": [asdict(r) for r in deduped],
     }
 
-
-# KEYWORDS: SCRAPE_SECTION, ISBN_HEURISTICS, DEDUP_TITLE_AUTHOR
 
 def main() -> None:
     import argparse
@@ -257,10 +416,19 @@ def main() -> None:
     parser.add_argument("--max-records", type=int, default=15)
     parser.add_argument("--max-pages", type=int, default=3)
     parser.add_argument("--timeout", type=int, default=15)
+    parser.add_argument("--fetch-details", action="store_true", help="Visitar la página individual de cada libro para extraer fecha y precio (pausa adicional por libro).")
+    parser.add_argument("--detail-pause", type=float, default=1.0, help="Pausa (segundos) entre peticiones a páginas individuales de libro cuando --fetch-details está activo.")
     parser.add_argument("--output", default=str(Path(__file__).resolve().parents[1] / "landing" / "goodreads_books.json"))
     args = parser.parse_args()
 
-    data = scrape_goodreads(args.query, max_records=args.max_records, max_pages=args.max_pages, timeout=args.timeout)
+    data = scrape_goodreads(
+        args.query,
+        max_records=args.max_records,
+        max_pages=args.max_pages,
+        timeout=args.timeout,
+        fetch_details=bool(args.fetch_details),
+        detail_pause_s=float(args.detail_pause),
+    )
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

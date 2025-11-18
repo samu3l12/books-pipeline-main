@@ -241,6 +241,18 @@ def _normalize_frames(gr: pd.DataFrame, gb: pd.DataFrame) -> Tuple[pd.DataFrame,
         if c in gr.columns:
             gr[c] = gr[c].apply(lambda v: str(v).strip() if pd.notna(v) and str(v).strip() != "" else None)
 
+    # Mapear campos adicionales que puede aportar el scraper de Goodreads
+    # (el scraper puede añadir 'pub_date', 'price_amount', 'price_currency', 'language')
+    # a los nombres canónicos usados en el pipeline: fecha_publicacion, precio, moneda, idioma.
+    if 'pub_date' in gr.columns and 'fecha_publicacion' not in gr.columns:
+        gr['fecha_publicacion'] = gr['pub_date']
+    if 'price_amount' in gr.columns and 'precio' not in gr.columns:
+        gr['precio'] = gr['price_amount']
+    if 'price_currency' in gr.columns and 'moneda' not in gr.columns:
+        gr['moneda'] = gr['price_currency']
+    if 'language' in gr.columns and 'idioma' not in gr.columns:
+        gr['idioma'] = gr['language']
+
     # No crear columnas en `gr` que no existen en el JSON de Goodreads.
     # Mantener solo los campos que realmente están en el JSON para evitar columnas
     # totalmente NULL/None que luego se arrastran por todo el pipeline.
@@ -913,6 +925,14 @@ def _build_dim_from_merged(merged: pd.DataFrame) -> pd.DataFrame:
                     break
             rec[f] = val
             prov_map[f] = src
+        # Copiar flags de validación que pudo haber generado la normalización semántica
+        # (por ejemplo: fecha_publicacion_valida, fecha_publicacion_parcial, idioma_valido, moneda_valida)
+        for vf in ('fecha_publicacion_valida', 'fecha_publicacion_parcial', 'idioma_valido', 'moneda_valida'):
+            try:
+                if vf in row.index:
+                    rec[vf] = row.get(vf)
+            except Exception:
+                pass
         # canonical key / isbn norm
         try:
             isbn13_norm = None
@@ -1009,6 +1029,20 @@ def integrate() -> None:
         merged = _canonicalize_merged_columns(merged)
     except Exception:
         logger.debug('Fallo al canonicalizar columnas de merged; se mantiene objeto original', exc_info=True)
+
+    # NUEVO: asegurarnos de que campos que usamos en la normalización semántica
+    # existen como columnas base (no sólo como sufijos *_gr/_gb). Esto permite que
+    # _apply_semantic_normalization detecte y procese fecha_publicacion, idioma, precio y moneda.
+    try:
+        for field in ('fecha_publicacion', 'idioma', 'precio', 'moneda'):
+            if any(col for col in merged.columns if col == field or col == f"{field}_gr" or col == f"{field}_gb"):
+                try:
+                    merged[field] = _coalesce_columns(merged, field)
+                except Exception:
+                    # no bloquear si falla la coalescencia de una columna
+                    pass
+    except Exception:
+        pass
 
     # APLICAR NORMALIZACIÓN SEMÁNTICA: fechas ISO, idioma BCP-47, moneda ISO-4217, precio numérico
     try:

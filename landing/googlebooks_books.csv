@@ -1,11 +1,12 @@
 gb_id,title,subtitle,authors,publisher,pub_date,language,categories,isbn13,isbn10,price_amount,price_currency,paginas,formato
+aWx1tAEACAAJ,Data Science for Business,,Foster Provost,,2013,en,Big data,9781449374273,1449374271,,,,BOOK
 CfjpAQAAQBAJ,Data Smart,Using Data Science to Transform Information into Insight,John W. Foreman,John Wiley & Sons,2013-10-31,en,Business & Economics,9781118839867,1118839862,,,432,BOOK
 oaH-zwEACAAJ,"Data Science from Scratch, 2nd Edition",,Joel Grus,,2019,en,,,,,,0,BOOK
-ZRATtAEACAAJ,R for Data Science,,Hadley Wickham. Garrett Grolemund,,2016,en,,9781491910382,1491910380,,,,BOOK
 tYp50AEACAAJ,Mindmasters,The Data-Driven Science of Predicting and Changing Human Behavior,SANDRA. MATZ,,2025-01-07,en,Business & Economics,9781647826314,1647826314,,,0,BOOK
-oTyVAQAAQBAJ,On Being a Data Skeptic,,Cathy O'Neil,"""O'Reilly Media, Inc.""",2013-09-30,en,Computers,9781491947241,1491947241,0.0,EUR,31,BOOK
-t9bxzgEACAAJ,"Python Data Science Handbook, 2nd Edition",,Jake VanderPlas,,2022,en,,,,,,109,BOOK
+ZRATtAEACAAJ,R for Data Science,,Hadley Wickham. Garrett Grolemund,,2016,en,,9781491910382,1491910380,,,,BOOK
+-L79DwAAQBAJ,Armas de destrucción matemática,Cómo el Big Data aumenta la desigualdad y amenaza la democracia,Cathy O'Neil,Capitán Swing Libros,2018-01-22,es,Literary Collections,9788412191301,8412191307,8.99,EUR,256,BOOK
 T2LeAQAACAAJ,Numsense! Data Science for the Layman,No Math Added,Annalyn Ng,Annalyn Ng & Kenneth Soo,2017-03-24,en,,9789811110689,9811110689,,,,BOOK
+t9bxzgEACAAJ,"Python Data Science Handbook, 2nd Edition",,Jake VanderPlas,,2022,en,,,,,,109,BOOK
 p_fTxQEACAAJ,Deep Learning,,John D. Kelleher,,2019,en,Artificial intelligence,9780262354899,0262354896,,,272,BOOK
 GCUqEAAAQBAJ,Becoming a Data Head,"How to Think, Speak, and Understand Data Science, Statistics, and Machine Learning",Alex J. Gutman;Jordan Goldmeier,John Wiley & Sons,2021-04-13,en,Business & Economics,9781119741763,1119741769,27.99,EUR,269,BOOK
 o2ovDgAAQBAJ,Data Science For Dummies,,Lillian Pierson,John Wiley & Sons,2017-02-21,en,Computers,9781119327653,1119327652,,,408,BOOK

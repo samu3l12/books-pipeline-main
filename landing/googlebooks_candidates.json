@@ -1,18 +1,74 @@
 [
   {
-    "rec_id": "https://www.goodreads.com/book/show/17912916-data-science-for-business?from_search=true&from_srp=true&qid=9DIt1j02js&rank=1",
+    "rec_id": "https://www.goodreads.com/book/show/17912916-data-science-for-business?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=1",
     "input_index": 0,
-    "csv_row_number": null,
+    "csv_row_number": 1,
     "title": "Data Science for Business: What You Need to Know about Data Mining and Data-Analytic Thinking",
     "author": "Foster Provost",
     "isbn13_input": null,
-    "candidates": [],
-    "best_score": null
+    "candidates": [
+      {
+        "gb_id": "EZAtAAAAQBAJ",
+        "score": 30.036630036630033,
+        "isbn13": "9781449374297",
+        "title": "Data Science for Business",
+        "authors": "Foster Provost;Tom Fawcett",
+        "publishedDate": "2013-07-27",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "EZAtAAAAQBAJ",
+        "score": 30.036630036630033,
+        "isbn13": "9781449374297",
+        "title": "Data Science for Business",
+        "authors": "Foster Provost;Tom Fawcett",
+        "publishedDate": "2013-07-27",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "aWx1tAEACAAJ",
+        "score": 56.7032967032967,
+        "isbn13": "9781449374273",
+        "title": "Data Science for Business",
+        "authors": "Foster Provost",
+        "publishedDate": "2013",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "bHj6zQEACAAJ",
+        "score": 40.49261083743842,
+        "isbn13": "9781801091954",
+        "title": "Data Science for Beginners, Data Analysis with Python, SQL Computer Programming for Beginners, Statistics for Beginners",
+        "authors": "Matt Foster",
+        "publishedDate": "2020-10-06",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "DE87DwAAQBAJ",
+        "score": 26.3003663003663,
+        "isbn13": "9783958455481",
+        "title": "Data Science für Unternehmen",
+        "authors": "Foster Provost;Tom Fawcett",
+        "publishedDate": "2017-10-25",
+        "price_amount": 9.99,
+        "price_currency": "EUR",
+        "price_country": "ES"
+      }
+    ],
+    "best_score": 56.7032967032967
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/17682206-data-smart?from_search=true&from_srp=true&qid=9DIt1j02js&rank=2",
+    "rec_id": "https://www.goodreads.com/book/show/17682206-data-smart?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=2",
     "input_index": 1,
-    "csv_row_number": 1,
+    "csv_row_number": 2,
     "title": "Data Smart: Using Data Science to Transform Information into Insight",
     "author": "John W. Foreman",
     "isbn13_input": null,
@@ -76,9 +132,9 @@
     "best_score": 50.414593698175786
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/25407018-data-science-from-scratch?from_search=true&from_srp=true&qid=9DIt1j02js&rank=3",
+    "rec_id": "https://www.goodreads.com/book/show/25407018-data-science-from-scratch?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=3",
     "input_index": 2,
-    "csv_row_number": 2,
+    "csv_row_number": 3,
     "title": "Data Science from Scratch: First Principles with Python",
     "author": "Joel Grus",
     "isbn13_input": null,
@@ -95,23 +151,23 @@
         "price_country": null
       },
       {
-        "gb_id": "aD3rjgEACAAJ",
-        "score": 68.51851851851852,
-        "isbn13": "9781491901410",
-        "title": "Data Science from Scratch",
-        "authors": "Joel Grus",
-        "publishedDate": "2015",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
-      },
-      {
         "gb_id": "24kdCAAAQBAJ",
         "score": 68.51851851851852,
         "isbn13": "9781491904398",
         "title": "Data Science from Scratch",
         "authors": "Joel Grus",
         "publishedDate": "2015-04-14",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "aD3rjgEACAAJ",
+        "score": 68.51851851851852,
+        "isbn13": "9781491901410",
+        "title": "Data Science from Scratch",
+        "authors": "Joel Grus",
+        "publishedDate": "2015",
         "price_amount": null,
         "price_currency": null,
         "price_country": null
@@ -128,12 +184,12 @@
         "price_country": null
       },
       {
-        "gb_id": "6-ye0AEACAAJ",
+        "gb_id": "Wqaa0AEACAAJ",
         "score": 13.88888888888889,
-        "isbn13": "9781032572192",
+        "isbn13": "9781032572239",
         "title": "Data Science",
-        "authors": "Tiffany Timbers;Trevor Campbell (Professor of statistics);Melissa Lee (Statistics educator);Joel Ostblom;Lindsey Heagy",
-        "publishedDate": "2024-08",
+        "authors": "Tiffany Timbers;Trevor Campbell;Melissa Lee;Joel Ostblom;Lindsey Heagy",
+        "publishedDate": "2024-08-08",
         "price_amount": null,
         "price_currency": null,
         "price_country": null
@@ -142,9 +198,42 @@
     "best_score": 73.7037037037037
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/33399049-r-for-data-science?from_search=true&from_srp=true&qid=9DIt1j02js&rank=4",
+    "rec_id": "https://www.goodreads.com/book/show/205905685-mindmasters?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=4",
     "input_index": 3,
-    "csv_row_number": 3,
+    "csv_row_number": 4,
+    "title": "Mindmasters: The Data-Driven Science of Predicting and Changing Human Behavior",
+    "author": "Sandra Matz",
+    "isbn13_input": null,
+    "candidates": [
+      {
+        "gb_id": "tYp50AEACAAJ",
+        "score": 47.78947368421053,
+        "isbn13": "9781647826314",
+        "title": "Mindmasters",
+        "authors": "SANDRA. MATZ",
+        "publishedDate": "2025-01-07",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "uDvwEAAAQBAJ",
+        "score": 47.78947368421053,
+        "isbn13": "9781647826321",
+        "title": "Mindmasters",
+        "authors": "Sandra Matz",
+        "publishedDate": "2025-01-07",
+        "price_amount": 29.44,
+        "price_currency": "EUR",
+        "price_country": "ES"
+      }
+    ],
+    "best_score": 47.78947368421053
+  },
+  {
+    "rec_id": "https://www.goodreads.com/book/show/33399049-r-for-data-science?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=5",
+    "input_index": 4,
+    "csv_row_number": 5,
     "title": "R for Data Science: Import, Tidy, Transform, Visualize, and Model Data",
     "author": "Hadley Wickham",
     "isbn13_input": null,
@@ -208,42 +297,9 @@
     "best_score": 39.07692307692308
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/205905685-mindmasters?from_search=true&from_srp=true&qid=9DIt1j02js&rank=5",
-    "input_index": 4,
-    "csv_row_number": 4,
-    "title": "Mindmasters: The Data-Driven Science of Predicting and Changing Human Behavior",
-    "author": "Sandra Matz",
-    "isbn13_input": null,
-    "candidates": [
-      {
-        "gb_id": "tYp50AEACAAJ",
-        "score": 47.78947368421053,
-        "isbn13": "9781647826314",
-        "title": "Mindmasters",
-        "authors": "SANDRA. MATZ",
-        "publishedDate": "2025-01-07",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
-      },
-      {
-        "gb_id": "uDvwEAAAQBAJ",
-        "score": 47.78947368421053,
-        "isbn13": "9781647826321",
-        "title": "Mindmasters",
-        "authors": "Sandra Matz",
-        "publishedDate": "2025-01-07",
-        "price_amount": 29.44,
-        "price_currency": "EUR",
-        "price_country": "ES"
-      }
-    ],
-    "best_score": 47.78947368421053
-  },
-  {
-    "rec_id": "https://www.goodreads.com/book/show/17346997-doing-data-science?from_search=true&from_srp=true&qid=9DIt1j02js&rank=6",
+    "rec_id": "https://www.goodreads.com/book/show/17346997-doing-data-science?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=6",
     "input_index": 5,
-    "csv_row_number": 5,
+    "csv_row_number": 6,
     "title": "Doing Data Science: Straight Talk from the Frontline",
     "author": "Cathy O'Neil",
     "isbn13_input": null,
@@ -260,15 +316,26 @@
         "price_country": null
       },
       {
-        "gb_id": "ycNKAQAAQBAJ",
+        "gb_id": "vcVKAQAAQBAJ",
         "score": 34.950980392156865,
-        "isbn13": "9781449363901",
+        "isbn13": "9781449363895",
         "title": "Doing Data Science",
         "authors": "Cathy O'Neil;Rachel Schutt",
         "publishedDate": "2013-10-09",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
+        "price_amount": 32.24,
+        "price_currency": "EUR",
+        "price_country": "ES"
+      },
+      {
+        "gb_id": "-L79DwAAQBAJ",
+        "score": 50.19607843137255,
+        "isbn13": "9788412191301",
+        "title": "Armas de destrucción matemática",
+        "authors": "Cathy O'Neil",
+        "publishedDate": "2018-01-22",
+        "price_amount": 8.99,
+        "price_currency": "EUR",
+        "price_country": "ES"
       },
       {
         "gb_id": "YN9njwEACAAJ",
@@ -291,25 +358,36 @@
         "price_amount": null,
         "price_currency": null,
         "price_country": null
-      },
-      {
-        "gb_id": "oTyVAQAAQBAJ",
-        "score": 52.69607843137255,
-        "isbn13": "9781491947241",
-        "title": "On Being a Data Skeptic",
-        "authors": "Cathy O'Neil",
-        "publishedDate": "2013-09-30",
-        "price_amount": 0.0,
-        "price_currency": "EUR",
-        "price_country": "ES"
       }
     ],
-    "best_score": 52.69607843137255
+    "best_score": 50.19607843137255
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/26457146-python-data-science-handbook?from_search=true&from_srp=true&qid=9DIt1j02js&rank=7",
+    "rec_id": "https://www.goodreads.com/book/show/34213247-numsense-data-science-for-the-layman?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=7",
     "input_index": 6,
-    "csv_row_number": 6,
+    "csv_row_number": 7,
+    "title": "Numsense! Data Science for the Layman: No Math Added",
+    "author": "Annalyn Ng",
+    "isbn13_input": null,
+    "candidates": [
+      {
+        "gb_id": "T2LeAQAACAAJ",
+        "score": 82.13333333333333,
+        "isbn13": "9789811110689",
+        "title": "Numsense! Data Science for the Layman",
+        "authors": "Annalyn Ng",
+        "publishedDate": "2017-03-24",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      }
+    ],
+    "best_score": 82.13333333333333
+  },
+  {
+    "rec_id": "https://www.goodreads.com/book/show/26457146-python-data-science-handbook?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=8",
+    "input_index": 7,
+    "csv_row_number": 8,
     "title": "Python Data Science Handbook: Essential Tools for Working with Data",
     "author": "Jake VanderPlas",
     "isbn13_input": null,
@@ -373,31 +451,9 @@
     "best_score": 68.88888888888889
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/34213247-numsense-data-science-for-the-layman?from_search=true&from_srp=true&qid=9DIt1j02js&rank=8",
-    "input_index": 7,
-    "csv_row_number": 7,
-    "title": "Numsense! Data Science for the Layman: No Math Added",
-    "author": "Annalyn Ng",
-    "isbn13_input": null,
-    "candidates": [
-      {
-        "gb_id": "T2LeAQAACAAJ",
-        "score": 82.13333333333333,
-        "isbn13": "9789811110689",
-        "title": "Numsense! Data Science for the Layman",
-        "authors": "Annalyn Ng",
-        "publishedDate": "2017-03-24",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
-      }
-    ],
-    "best_score": 82.13333333333333
-  },
-  {
-    "rec_id": "https://www.goodreads.com/book/show/36722689-data-science?from_search=true&from_srp=true&qid=9DIt1j02js&rank=9",
+    "rec_id": "https://www.goodreads.com/book/show/36722689-data-science?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=9",
     "input_index": 8,
-    "csv_row_number": 8,
+    "csv_row_number": 9,
     "title": "Data Science (The MIT Press Essential Knowledge series)",
     "author": "John D. Kelleher",
     "isbn13_input": null,
@@ -425,23 +481,23 @@
         "price_country": "ES"
       },
       {
-        "gb_id": "1Iv-DwAAQBAJ",
-        "score": 26.242424242424242,
-        "isbn13": "9780262044691",
-        "title": "Fundamentals of Machine Learning for Predictive Data Analytics, second edition",
-        "authors": "John D. Kelleher;Brian Mac Namee;Aoife D'Arcy",
-        "publishedDate": "2020-10-20",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
-      },
-      {
         "gb_id": "p_fTxQEACAAJ",
         "score": 46.79245283018868,
         "isbn13": "9780262354899",
         "title": "Deep Learning",
         "authors": "John D. Kelleher",
         "publishedDate": "2019",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "1Iv-DwAAQBAJ",
+        "score": 26.242424242424242,
+        "isbn13": "9780262044691",
+        "title": "Fundamentals of Machine Learning for Predictive Data Analytics, second edition",
+        "authors": "John D. Kelleher;Brian Mac Namee;Aoife D'Arcy",
+        "publishedDate": "2020-10-20",
         "price_amount": null,
         "price_currency": null,
         "price_country": null
@@ -461,9 +517,9 @@
     "best_score": 46.79245283018868
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/56357967-becoming-a-data-head?from_search=true&from_srp=true&qid=9DIt1j02js&rank=10",
+    "rec_id": "https://www.goodreads.com/book/show/56357967-becoming-a-data-head?from_search=true&from_srp=true&qid=tsAaGyhfPr&rank=10",
     "input_index": 9,
-    "csv_row_number": 9,
+    "csv_row_number": 10,
     "title": "Becoming a Data Head: How to Think, Speak, and Understand Data Science, Statistics, and Machine Learning",
     "author": "Alex J. Gutman",
     "isbn13_input": null,
@@ -491,17 +547,6 @@
         "price_country": "ES"
       },
       {
-        "gb_id": "rtxtEAAAQBAJ",
-        "score": 28.917748917748916,
-        "isbn13": "9783960106678",
-        "title": "Werde ein Data Head",
-        "authors": "Alex J. Gutman;Jordan Goldmeier",
-        "publishedDate": "2022-05-02",
-        "price_amount": 34.9,
-        "price_currency": "EUR",
-        "price_country": "ES"
-      },
-      {
         "gb_id": "4jUrzgEACAAJ",
         "score": 23.46320346320346,
         "isbn13": "9798593883094",
@@ -522,18 +567,40 @@
         "price_amount": 23.7,
         "price_currency": "EUR",
         "price_country": "ES"
+      },
+      {
+        "gb_id": "Dp_30AEACAAJ",
+        "score": 32.38095238095238,
+        "isbn13": "9798300144012",
+        "title": "Mastering Advance Data Analytics Machine Learning, Data Mining and Analytic Thinking",
+        "authors": "Dr Alex Harper",
+        "publishedDate": "2024-11-16",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
       }
     ],
     "best_score": 33.79509379509379
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/56751800-data-science-for-dummies-for-dummies?from_search=true&from_srp=true&qid=2LMvMN0B60&rank=11",
+    "rec_id": "https://www.goodreads.com/book/show/56751800-data-science-for-dummies-for-dummies?from_search=true&from_srp=true&qid=1zw8aDqE5J&rank=11",
     "input_index": 10,
-    "csv_row_number": 10,
+    "csv_row_number": 11,
     "title": "Data Science For Dummies (For Dummies",
     "author": "Lillian Pierson",
     "isbn13_input": null,
     "candidates": [
+      {
+        "gb_id": "FTsxEQAAQBAJ",
+        "score": 84.88888888888889,
+        "isbn13": "9781394297016",
+        "title": "Data Science Essentials For Dummies",
+        "authors": "Lillian Pierson",
+        "publishedDate": "2024-11-13",
+        "price_amount": 10.99,
+        "price_currency": "EUR",
+        "price_country": "ES"
+      },
       {
         "gb_id": "o2ovDgAAQBAJ",
         "score": 86.66666666666667,
@@ -541,6 +608,17 @@
         "title": "Data Science For Dummies",
         "authors": "Lillian Pierson",
         "publishedDate": "2017-02-21",
+        "price_amount": null,
+        "price_currency": null,
+        "price_country": null
+      },
+      {
+        "gb_id": "Syy9BgAAQBAJ",
+        "score": 86.66666666666667,
+        "isbn13": "9781118841556",
+        "title": "Data Science For Dummies",
+        "authors": "Lillian Pierson",
+        "publishedDate": "2015-03-09",
         "price_amount": null,
         "price_currency": null,
         "price_country": null
@@ -557,17 +635,6 @@
         "price_country": "ES"
       },
       {
-        "gb_id": "X2wvDgAAQBAJ",
-        "score": 86.66666666666667,
-        "isbn13": "9781119327646",
-        "title": "Data Science For Dummies",
-        "authors": "Lillian Pierson",
-        "publishedDate": "2017-02-21",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
-      },
-      {
         "gb_id": "bqIIDAAAQBAJ",
         "score": 80.55555555555556,
         "isbn13": "9783527806751",
@@ -577,25 +644,14 @@
         "price_amount": null,
         "price_currency": null,
         "price_country": null
-      },
-      {
-        "gb_id": "_vf1zgEACAAJ",
-        "score": 63.333333333333336,
-        "isbn13": null,
-        "title": "Data Science",
-        "authors": "Lillian Pierson",
-        "publishedDate": "2021",
-        "price_amount": null,
-        "price_currency": null,
-        "price_country": null
       }
     ],
     "best_score": 86.66666666666667
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/58949285-ace-the-data-science-interview?from_search=true&from_srp=true&qid=2LMvMN0B60&rank=12",
+    "rec_id": "https://www.goodreads.com/book/show/58949285-ace-the-data-science-interview?from_search=true&from_srp=true&qid=1zw8aDqE5J&rank=12",
     "input_index": 11,
-    "csv_row_number": 11,
+    "csv_row_number": 12,
     "title": "Ace the Data Science Interview: 201 Real Interview Questions Asked By FAANG, Tech Startups, & Wall Street",
     "author": "Kevin Huo",
     "isbn13_input": null,
@@ -615,9 +671,9 @@
     "best_score": 32.0
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/26299386-the-art-of-data-science?from_search=true&from_srp=true&qid=2LMvMN0B60&rank=13",
+    "rec_id": "https://www.goodreads.com/book/show/26299386-the-art-of-data-science?from_search=true&from_srp=true&qid=1zw8aDqE5J&rank=13",
     "input_index": 12,
-    "csv_row_number": 12,
+    "csv_row_number": 13,
     "title": "The Art of Data Science: A Guide for Anyone Who Works with Data",
     "author": "Roger D. Peng",
     "isbn13_input": null,
@@ -681,9 +737,9 @@
     "best_score": 54.67741935483871
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/13638556-what-is-data-science?from_search=true&from_srp=true&qid=2LMvMN0B60&rank=14",
+    "rec_id": "https://www.goodreads.com/book/show/13638556-what-is-data-science?from_search=true&from_srp=true&qid=1zw8aDqE5J&rank=14",
     "input_index": 13,
-    "csv_row_number": 13,
+    "csv_row_number": 14,
     "title": "What Is Data Science?",
     "author": "Mike Loukides",
     "isbn13_input": null,
@@ -747,9 +803,9 @@
     "best_score": 100.0
   },
   {
-    "rec_id": "https://www.goodreads.com/book/show/57182112-minding-the-machines?from_search=true&from_srp=true&qid=2LMvMN0B60&rank=15",
+    "rec_id": "https://www.goodreads.com/book/show/57182112-minding-the-machines?from_search=true&from_srp=true&qid=1zw8aDqE5J&rank=15",
     "input_index": 14,
-    "csv_row_number": 14,
+    "csv_row_number": 15,
     "title": "Minding the Machines: Building and Leading Data Science and Analytics Teams",
     "author": "Jeremy  Adamson",
     "isbn13_input": null,

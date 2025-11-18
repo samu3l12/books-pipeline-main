@@ -1,3 +1,7 @@
 ts_utc,step,source_name,url_or_file,status_code,rows_fetched,duration_s,user_agent,notes
 2025-11-18T13:57:00+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=1,200,,1.267,"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
 2025-11-18T13:57:02+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=2,200,,0.743,"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
+2025-11-18T21:41:20+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=1,200,,1.171,"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
+2025-11-18T21:41:21+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=2,200,,0.782,"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
+2025-11-18T21:48:08+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=1,200,,1.164,"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
+2025-11-18T21:48:10+00:00,scrape,goodreads,https://www.goodreads.com/search?q=data+science&page=2,200,,0.867,"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0 Safari/537.36 (compatible; BooksPipeline/1.0)",
