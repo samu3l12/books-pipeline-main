@@ -1,8 +1,7 @@
-/.vs/
-/.venv/
-/work/
-/.github/
-/scripts/
-/work/
-/.idea/
+.vs/
+.venv/
+work/
+.github/
+scripts/
+.idea/
 .env
