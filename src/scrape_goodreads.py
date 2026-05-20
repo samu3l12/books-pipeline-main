@@ -114,7 +114,7 @@ def _prepare_search_query(query: Optional[str]) -> str:
         return fixed
 
     fixed_ascii = _strip_accents(fixed).lower()
-    tokens = re.findall(r"\w+", fixed_ascii, flags=re.UNICODE)
+    tokens = re.findall(r"\w+", fixed_ascii)
 
     def _is_keyword_token(token: str) -> bool:
         if token in _ES_STOPWORDS:
@@ -125,7 +125,9 @@ def _prepare_search_query(query: Optional[str]) -> str:
     filtered = [t for t in tokens if _is_keyword_token(t)]
     if filtered:
         return " ".join(filtered[:_MAX_KEYWORD_TOKENS])
-    return fixed
+    if tokens:
+        return " ".join(tokens[:_MAX_KEYWORD_TOKENS])
+    return ""
 
 
 def _build_session(timeout: int = 15) -> requests.Session:
