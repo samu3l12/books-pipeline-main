@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import random
 import time
+import unicodedata
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,9 +67,15 @@ _ES_STOPWORDS = {
     "a", "al", "asi", "busco", "con", "de", "del", "el", "embargo", "en", "esa",
     "es", "he", "igual", "la", "lo", "los", "mas", "menos", "mi", "mismo", "muy",
     "o", "para", "pero", "poder", "por", "q", "que", "seria", "sin", "su", "tengo",
-    "una", "uno", "unos", "visto", "y", "yo", "crear", "dificil", "difícil", "reproducir",
+    "una", "uno", "unos", "visto", "y", "yo", "crear", "dificil", "reproducir",
 }
 _MAX_KEYWORD_TOKENS = 8
+_MIN_TOKEN_LENGTH_WITHOUT_DIGITS = 2
+# Correcciones mínimas de abreviaciones/typos muy frecuentes en texto coloquial.
+_COMMON_CHAT_REPLACEMENTS = {
+    r"\bpwro\b": "pero",
+    r"\bq\b": "que",
+}
 
 
 @dataclass
@@ -85,6 +92,11 @@ class GoodreadsRecord:
     price_currency: Optional[str] = None
 
 
+def _strip_accents(text: str) -> str:
+    norm = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in norm if not unicodedata.combining(ch))
+
+
 def _prepare_search_query(query: Optional[str]) -> str:
     """Normaliza texto libre para mejorar búsquedas en Goodreads."""
     raw = (query or "").strip()
@@ -92,11 +104,7 @@ def _prepare_search_query(query: Optional[str]) -> str:
         return ""
 
     fixed = raw
-    replacements = {
-        r"\bpwro\b": "pero",
-        r"\bq\b": "que",
-    }
-    for pattern, repl in replacements.items():
+    for pattern, repl in _COMMON_CHAT_REPLACEMENTS.items():
         fixed = re.sub(pattern, repl, fixed, flags=re.IGNORECASE)
     fixed = re.sub(r"\s+", " ", fixed).strip()
 
@@ -104,10 +112,11 @@ def _prepare_search_query(query: Optional[str]) -> str:
     if len(fixed.split()) <= 6:
         return fixed
 
-    tokens = re.findall(r"\w+", fixed.lower(), flags=re.UNICODE)
+    fixed_ascii = _strip_accents(fixed).lower()
+    tokens = re.findall(r"\w+", fixed_ascii, flags=re.UNICODE)
     filtered = [
         t for t in tokens
-        if (t not in _ES_STOPWORDS) and (len(t) > 2 or re.search(r"\d", t))
+        if (t not in _ES_STOPWORDS) and (len(t) > _MIN_TOKEN_LENGTH_WITHOUT_DIGITS or re.search(r"\d", t))
     ]
     if filtered:
         return " ".join(filtered[:_MAX_KEYWORD_TOKENS])
