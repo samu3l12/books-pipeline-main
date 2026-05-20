@@ -61,6 +61,14 @@ USER_AGENTS = [
 ]
 DEFAULT_UA = USER_AGENTS[0] + " (compatible; BooksPipeline/1.0)"
 
+# Stopwords simples para limpiar consultas largas en español coloquial.
+_ES_STOPWORDS = {
+    "a", "al", "asi", "busco", "con", "de", "del", "el", "embargo", "en", "esa",
+    "es", "he", "igual", "la", "lo", "los", "mas", "menos", "mi", "mismo", "muy",
+    "o", "para", "pero", "poder", "por", "q", "que", "seria", "sin", "su", "tengo",
+    "una", "uno", "unos", "visto", "y", "yo", "crear", "dificil", "difícil", "reproducir",
+}
+
 
 @dataclass
 class GoodreadsRecord:
@@ -74,6 +82,35 @@ class GoodreadsRecord:
     pub_date: Optional[str] = None
     price_amount: Optional[float] = None
     price_currency: Optional[str] = None
+
+
+def _prepare_search_query(query: Optional[str]) -> str:
+    """Normaliza texto libre para mejorar búsquedas en Goodreads."""
+    raw = (query or "").strip()
+    if not raw:
+        return ""
+
+    fixed = raw
+    replacements = {
+        r"\bpwro\b": "pero",
+        r"\bq\b": "que",
+    }
+    for pattern, repl in replacements.items():
+        fixed = re.sub(pattern, repl, fixed, flags=re.IGNORECASE)
+    fixed = re.sub(r"\s+", " ", fixed).strip()
+
+    # Mantener consultas cortas casi intactas para no degradar casos simples.
+    if len(fixed.split()) <= 6:
+        return fixed
+
+    tokens = re.findall(r"[A-Za-zÀ-ÿ0-9_-]+", fixed.lower())
+    filtered = [
+        t for t in tokens
+        if (t not in _ES_STOPWORDS) and (len(t) > 2 or re.search(r"\d", t))
+    ]
+    if filtered:
+        return " ".join(filtered[:8])
+    return fixed
 
 
 def _build_session(timeout: int = 15) -> requests.Session:
@@ -323,13 +360,16 @@ def _fetch_book_page_details(session: requests.Session, book_url: str, timeout: 
 def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8, max_pages: int = 3, timeout: int = 15, fetch_details: bool = False, detail_pause_s: float = 1.0) -> Dict[str, object]:
     load_dotenv()
     session = _build_session(timeout=timeout)
+    effective_query = _prepare_search_query(query)
+    if not effective_query:
+        effective_query = query
 
     records: List[GoodreadsRecord] = []
     page = 1
     errors = 0
     while len(records) < max_records and page <= max_pages:
         try:
-            html = fetch_search_html(session, query, page=page, timeout=timeout)
+            html = fetch_search_html(session, effective_query, page=page, timeout=timeout)
         except Exception as e:
             errors += 1
             if errors >= 2:  # falla suave tras 2 intentos
@@ -359,6 +399,7 @@ def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8
         "source": "goodreads",
         "base_url": BASE_URL,
         "query": query,
+        "query_effective": effective_query,
         "user_agent": session.headers.get("User-Agent", DEFAULT_UA),
         "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "record_count": len(deduped),
