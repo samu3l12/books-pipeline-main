@@ -114,10 +114,14 @@ def _prepare_search_query(query: Optional[str]) -> str:
 
     fixed_ascii = _strip_accents(fixed).lower()
     tokens = re.findall(r"\w+", fixed_ascii, flags=re.UNICODE)
-    filtered = [
-        t for t in tokens
-        if (t not in _ES_STOPWORDS) and (len(t) > _MIN_TOKEN_LENGTH_WITHOUT_DIGITS or re.search(r"\d", t))
-    ]
+
+    def _is_keyword_token(token: str) -> bool:
+        if token in _ES_STOPWORDS:
+            return False
+        has_digit = any(ch.isdigit() for ch in token)
+        return len(token) > _MIN_TOKEN_LENGTH_WITHOUT_DIGITS or has_digit
+
+    filtered = [t for t in tokens if _is_keyword_token(t)]
     if filtered:
         return " ".join(filtered[:_MAX_KEYWORD_TOKENS])
     return fixed
