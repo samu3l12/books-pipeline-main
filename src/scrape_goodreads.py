@@ -70,7 +70,8 @@ _ES_STOPWORDS = {
     "una", "uno", "unos", "visto", "y", "yo", "crear", "dificil", "reproducir",
 }
 _MAX_KEYWORD_TOKENS = 8
-_MIN_TOKEN_LENGTH_WITHOUT_DIGITS = 2
+_SHORT_QUERY_WORD_THRESHOLD = 6
+_MIN_TOKEN_CHARS = 3
 # Correcciones mínimas de abreviaciones/typos muy frecuentes en texto coloquial.
 _COMMON_CHAT_REPLACEMENTS = {
     r"\bpwro\b": "pero",
@@ -109,7 +110,7 @@ def _prepare_search_query(query: Optional[str]) -> str:
     fixed = re.sub(r"\s+", " ", fixed).strip()
 
     # Mantener consultas cortas casi intactas para no degradar casos simples.
-    if len(fixed.split()) <= 6:
+    if len(fixed.split()) <= _SHORT_QUERY_WORD_THRESHOLD:
         return fixed
 
     fixed_ascii = _strip_accents(fixed).lower()
@@ -119,7 +120,7 @@ def _prepare_search_query(query: Optional[str]) -> str:
         if token in _ES_STOPWORDS:
             return False
         has_digit = any(ch.isdigit() for ch in token)
-        return len(token) > _MIN_TOKEN_LENGTH_WITHOUT_DIGITS or has_digit
+        return len(token) >= _MIN_TOKEN_CHARS or has_digit
 
     filtered = [t for t in tokens if _is_keyword_token(t)]
     if filtered:
