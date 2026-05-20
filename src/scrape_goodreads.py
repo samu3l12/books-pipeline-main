@@ -68,6 +68,7 @@ _ES_STOPWORDS = {
     "o", "para", "pero", "poder", "por", "q", "que", "seria", "sin", "su", "tengo",
     "una", "uno", "unos", "visto", "y", "yo", "crear", "dificil", "difícil", "reproducir",
 }
+_MAX_KEYWORD_TOKENS = 8
 
 
 @dataclass
@@ -103,13 +104,13 @@ def _prepare_search_query(query: Optional[str]) -> str:
     if len(fixed.split()) <= 6:
         return fixed
 
-    tokens = re.findall(r"[A-Za-zÀ-ÿ0-9_-]+", fixed.lower())
+    tokens = re.findall(r"\w+", fixed.lower(), flags=re.UNICODE)
     filtered = [
         t for t in tokens
         if (t not in _ES_STOPWORDS) and (len(t) > 2 or re.search(r"\d", t))
     ]
     if filtered:
-        return " ".join(filtered[:8])
+        return " ".join(filtered[:_MAX_KEYWORD_TOKENS])
     return fixed
 
 
@@ -361,8 +362,6 @@ def scrape_goodreads(query: str, max_records: int = 15, min_pause_s: float = 0.8
     load_dotenv()
     session = _build_session(timeout=timeout)
     effective_query = _prepare_search_query(query)
-    if not effective_query:
-        effective_query = query
 
     records: List[GoodreadsRecord] = []
     page = 1
